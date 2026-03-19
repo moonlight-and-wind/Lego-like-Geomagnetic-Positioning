@@ -6,7 +6,8 @@ import zipfile
 import csv
 from pathlib import Path
 from urllib.request import urlretrieve
-
+from gstools import Gaussian, krige
+from pykrige.ok import OrdinaryKriging
 import numpy as np
 
 UJI_ZIP_URL = "https://archive.ics.uci.edu/static/public/343/ujiindoorloc%2Bmag.zip"
@@ -488,12 +489,19 @@ def _api_get_map(
         return map_info
 
     if source == "own":
-        return _build_own_map_interface(
+        raw_map =  _build_own_map_interface(
             own_grid_array=own_grid_array,
             own_grid_map_path=own_grid_map_path,
             own_grid_format=own_grid_format,
             own_grid_meta=own_grid_meta,
         )
+        data = own_grid_array
+        gridx = np.arange(own_grid_meta["x_min"], own_grid_meta["x_max"], 0.01)
+        gridy = np.arange(own_grid_meta["y_min"], own_grid_meta["y_max"], 0.01)
+        cov_model = Gaussian(dim=2, len_scale=1, anis=.2, angles=-.5, var=.5, nugget=.1)
+        OK1 = OrdinaryKriging(data[:, 0], data[:, 1], data[:, 2], cov_model)
+        z1, ss1 = OK1.execute('grid', gridx, gridy)
+        return {"map":z1 , "rangex_min": own_grid_meta["x_min"], "rangex_max": own_grid_meta["x_max"], "rangey_min": own_grid_meta["y_min"], "rangey_max":own_grid_meta["y_max"]}
 
     raise ValueError(f"Unsupported map source: {source}")
 
