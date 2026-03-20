@@ -488,22 +488,59 @@ def _api_get_map(
         map_info["extract_dir"] = str(extract_dir)
         return map_info
 
+    # if source == "own":
+    #     raw_map =  _build_own_map_interface(
+    #         own_grid_array=own_grid_array,
+    #         own_grid_map_path=own_grid_map_path,
+    #         own_grid_format=own_grid_format,
+    #         own_grid_meta=own_grid_meta,
+    #     )
+    #     data = own_grid_array
+    #     gridx = np.arange(own_grid_meta["x_min"], own_grid_meta["x_max"], 0.01)
+    #     gridy = np.arange(own_grid_meta["y_min"], own_grid_meta["y_max"], 0.01)
+    #     cov_model = Gaussian(dim=2, len_scale=1, anis=.2, angles=-.5, var=.5, nugget=.1)
+    #     OK1 = OrdinaryKriging(data[:, 0], data[:, 1], data[:, 2], cov_model)
+    #     z1, ss1 = OK1.execute('grid', gridx, gridy)
+    #     return {"map":z1 , "rangex_min": own_grid_meta["x_min"], "rangex_max": own_grid_meta["x_max"], "rangey_min": own_grid_meta["y_min"], "rangey_max":own_grid_meta["y_max"]}
+    #
+    # raise ValueError(f"Unsupported map source: {source}")
     if source == "own":
-        raw_map =  _build_own_map_interface(
+        raw_map = _build_own_map_interface(
             own_grid_array=own_grid_array,
             own_grid_map_path=own_grid_map_path,
             own_grid_format=own_grid_format,
             own_grid_meta=own_grid_meta,
         )
-        data = own_grid_array
-        gridx = np.arange(own_grid_meta["x_min"], own_grid_meta["x_max"], 0.01)
-        gridy = np.arange(own_grid_meta["y_min"], own_grid_meta["y_max"], 0.01)
-        cov_model = Gaussian(dim=2, len_scale=1, anis=.2, angles=-.5, var=.5, nugget=.1)
-        OK1 = OrdinaryKriging(data[:, 0], data[:, 1], data[:, 2], cov_model)
-        z1, ss1 = OK1.execute('grid', gridx, gridy)
-        return {"map":z1 , "rangex_min": own_grid_meta["x_min"], "rangex_max": own_grid_meta["x_max"], "rangey_min": own_grid_meta["y_min"], "rangey_max":own_grid_meta["y_max"]}
 
-    raise ValueError(f"Unsupported map source: {source}")
+        data = np.asarray(own_grid_array, dtype=float)  # data.shape = (N, 3)
+
+
+        gridx = np.arange(own_grid_meta["x_min"], own_grid_meta["x_max"] + 0.02, 0.02)
+        gridy = np.arange(own_grid_meta["y_min"], own_grid_meta["y_max"] + 0.02, 0.02)
+
+
+        field_var = np.var(data[:, 2])
+
+
+        cov_model = Gaussian(
+            dim=2,
+            len_scale=1.2,
+            anis=0.25 / 1.2,
+            angles=0.0,
+            var=field_var,
+            nugget=0.02 * field_var
+        )
+
+        OK1 = OrdinaryKriging(data[:, 0], data[:, 1], data[:, 2], cov_model)
+        z1, ss1 = OK1.execute("grid", gridx, gridy)
+
+        return {
+            "map": z1,
+            "rangex_min": own_grid_meta["x_min"],
+            "rangex_max": own_grid_meta["x_max"],
+            "rangey_min": own_grid_meta["y_min"],
+            "rangey_max": own_grid_meta["y_max"],
+        }
 
 
 # --- Public API placeholders used by Experiment.run() ---
