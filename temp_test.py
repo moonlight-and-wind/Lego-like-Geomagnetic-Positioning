@@ -1,3 +1,17 @@
+"""
+ATTENTION: DO NOT DO ANY MODIFICATION CURRENTLY!
+Some of the logic must be integrated into the "own" branch of
+_api_get_map() in the future. This is only an exclusive python file
+used for map builder's test. This file can build and plot the magnetic
+map based on data recorded in magnetometer_map_own.py. Everyone should
+fully understand how it works before move forward to further map building
+works.
+@ author: tianhs6523
+@ email: kudoumakoto6523@gmail.com
+@ date: Mar 20th, 2026
+TODO
+"""
+
 
 import Geomag.algorithms
 import numpy as np
@@ -94,6 +108,7 @@ plt.show()
 #     own_grid_array=map_array,
 #     own_grid_map_path=None,
 #     own_grid_format="array",
-#     own_grid_meta={"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10},)
+#     own_grid_meta={"x_min": 0, "y_min": 0, "x_max": 10, "y_max": 10}
+#     )
 # plt.imshow(map_dict["map"], origin="lower", extent=[map_dict["rangex_min"], map_dict["rangex_max"], map_dict["rangey_min"], map_dict["rangey_max"]])
 # plt.show()
