@@ -273,10 +273,41 @@ pf_config = PFConfig(
 
 ---
 
-## 九、后续方向
+## 十、Web 应用（Bokeh）修复（2026-05-31 晚）
 
-1. **PDR 改进**：陀螺仪零偏估计 + 静止校准，减少航向漂移（当前 PDR 均值仍 8-10m）
+### 问题
+
+1. **结果提取错误**：`run_branch_simulation()` 返回 dict，但旧代码按 `.x`/`.y` 属性提取 → 落到 synthetic random walk
+2. **own_profile 默认 `own_branch`**：未调用 `resolve_own_selection()` 自动解析 → 走了错误的分支配置
+3. **初始航向默认 0°**：CLI 默认 `None`（自动从路线推断 ≈90°），web 默认 0° → 航向偏了 90°
+4. **`show=True` 弹 matplotlib 窗口**：阻塞 bokeh 事件循环
+5. **Bokeh 图只有 PF 线**：缺少真值路线和 PDR 做参考
+
+### 修复
+
+| 文件 | 改动 |
+|------|------|
+| `geomag_web_app.py` | 重写 `run_simulation()` 返回完整 dict |
+| | 调用 `resolve_own_selection()` 自动解析 profile/dataset_key |
+| | 新增"使用指定初始航向"下拉，默认自动推断 |
+| | `show=False` 避免 matplotlib 弹窗阻塞 |
+| | Bokeh 图新增三条线：绿=真值路线, 橙=PDR, 青=PF |
+| | `match_aspect=True` 等比例缩放 |
+| | `max_frames` 滑块范围 0-5000，默认 0（无限制） |
+| | 修复 widget 默认值（own→route1_run2, profile→自动） |
+
+### 验证
+
+Web 界面运行 route1_run2（max_frames=0, 航向=自动推断）：
+- PF mean=3.99m, P95=6.67m ✅ 与 CLI V7 结果完全一致
+- 三线图可直观对比 PF vs 真值 vs PDR
+
+---
+
+## 十一、后续方向
+
+1. **PDR 改进**：陀螺仪零偏估计 + 静止校准，减少航向漂移
 2. **更高精度真值采集**：地面标记已知坐标点，手动记录代替手机 GPS
 3. **地图质量提升**：使用更高分辨率磁力计重新扫描地面磁图
 4. **Windows 实机测试**：在 Windows 上验证 `run.bat` 和 CLI 命令
-5. **route2_run2 包格式注册**：将遗留数据注册到 package 格式中
+5. **Web 界面增强**：添加误差统计显示、路线选择下拉、结果导出按钮

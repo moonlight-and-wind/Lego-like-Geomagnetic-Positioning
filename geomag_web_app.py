@@ -98,80 +98,52 @@ def _synthetic_random_walk(n: int = 200) -> tuple[np.ndarray, np.ndarray]:
     return np.array(x), np.array(y)
 
 
-def run_simulation(params: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Run the geomagnetic simulation or fallback synthetic generator.
+def run_simulation(params: dict) -> dict | None:
+    """Run the geomagnetic simulation and return the full result payload.
 
-    Parameters
-    ----------
-    params : dict
-        Dictionary containing the current parameter values gathered from
-        the widgets.  When the real simulation API is present this
-        dictionary will be unpacked into a BranchConfig and passed to
-        ``run_branch_simulation``.  Otherwise a synthetic random walk is
-        returned.
-
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        Arrays of X and Y coordinates describing the path.
+    Returns the dict from ``run_branch_simulation`` (with ``pf_track``,
+    ``pdr_track``, ``route_xy_m``), or ``None`` on failure.
     """
-    if run_branch_simulation is not None and BranchConfig is not None:
-        # Construct configuration from widget parameters.  Many of the
-        # parameters defined in ``main.py`` are included here.  Additional
-        # fields may be added as required.
-        cfg = BranchConfig(
-            branch=params.get("branch"),
-            window_size=params.get("window_size"),
-            max_frames=params.get("max_frames"),
-            show=True,
-            output_json=None,
-            output_png=None,
-            uji_test_file=params.get("uji_test_file"),
-            uji_data_root=params.get("uji_data_root"),
-            own_profile=params.get("own_profile"),
-            own_dataset_key=params.get("own_dataset_key"),
-            own_data_dir=params.get("own_data_dir"),
-            own_map_mode=params.get("own_map_mode"),
-            own_map_npz_path=params.get("own_map_npz_path"),
-            own_route_xy_m=
-                parse_route_control_points(params.get("own_route"))
-                if params.get("own_route")
-                else None,
-            own_initial_heading_deg=params.get("own_initial_heading_deg"),
-            own_use_route_initial_heading=not params.get("no_route_initial_heading"),
-            own_mirror_y=params.get("mirror_y"),
-            own_heading_offset_deg=params.get("own_heading_offset_deg"),
-            own_trim_head=params.get("own_trim_head"),
-            own_trim_tail=params.get("own_trim_tail"),
-        )
-        try:
-            result = run_branch_simulation(cfg)
-            # ``run_branch_simulation`` is expected to return some form of
-            # position history.  For compatibility this code attempts to
-            # extract X and Y coordinates from common structures.  If the
-            # returned object has attributes ``x`` and ``y`` they are used.
-            # Otherwise we assume the result itself is a two‑column numpy
-            # array or list.  When these assumptions fail a synthetic path
-            # is returned as a fallback.
-            if hasattr(result, "x") and hasattr(result, "y"):
-                x_data = np.asarray(result.x)
-                y_data = np.asarray(result.y)
-            elif isinstance(result, (list, tuple, np.ndarray)):
-                arr = np.asarray(result)
-                if arr.ndim == 2 and arr.shape[1] >= 2:
-                    x_data = arr[:, 0]
-                    y_data = arr[:, 1]
-                else:
-                    x_data, y_data = _synthetic_random_walk(n=params.get("max_frames", 200))
-            else:
-                x_data, y_data = _synthetic_random_walk(n=params.get("max_frames", 200))
-            return x_data, y_data
-        except Exception:
-            logger.exception("Simulation failed — falling back to synthetic random walk.")
-            return _synthetic_random_walk(n=params.get("max_frames", 200))
-    # Fallback when the simulation API is unavailable
-    logger.warning("Simulation API not available — using synthetic random walk.")
-    return _synthetic_random_walk(n=params.get("max_frames", 200))
+    if run_branch_simulation is None or BranchConfig is None:
+        logger.warning("Simulation API not available.")
+        return None
+
+    own_sel = params.get("own", "").strip()
+    own_defaults = resolve_own_selection(own_sel) if own_sel and resolve_own_selection else {}
+    own_profile = params.get("own_profile") or own_defaults.get("own_profile", "package")
+    own_dataset_key = params.get("own_dataset_key") or own_defaults.get("own_dataset_key", own_sel)
+    own_data_dir = params.get("own_data_dir") or own_defaults.get("own_data_dir", "")
+
+    cfg = BranchConfig(
+        branch=params.get("branch"),
+        window_size=params.get("window_size"),
+        max_frames=params.get("max_frames"),
+        show=False,
+        output_json=None,
+        output_png=None,
+        uji_test_file=params.get("uji_test_file"),
+        uji_data_root=params.get("uji_data_root"),
+        own_profile=own_profile,
+        own_dataset_key=own_dataset_key,
+        own_data_dir=own_data_dir,
+        own_map_mode=params.get("own_map_mode"),
+        own_map_npz_path=params.get("own_map_npz_path"),
+        own_route_xy_m=
+            parse_route_control_points(params.get("own_route"))
+            if params.get("own_route")
+            else None,
+        own_initial_heading_deg=params.get("own_initial_heading_deg"),
+        own_use_route_initial_heading=not params.get("no_route_initial_heading"),
+        own_mirror_y=params.get("mirror_y"),
+        own_heading_offset_deg=params.get("own_heading_offset_deg"),
+        own_trim_head=params.get("own_trim_head"),
+        own_trim_tail=params.get("own_trim_tail"),
+    )
+    try:
+        return run_branch_simulation(cfg)
+    except Exception:
+        logger.exception("Simulation failed.")
+        return None
 
 
 class GeoMagApp:
@@ -205,13 +177,13 @@ class GeoMagApp:
             value="",
         )
         self.own_input = TextInput(
-            title="室内数据选择 (own)\n例如: route1_run1",
-            value="route1_run1",
+            title="室内数据选择 (own)\n例如: route1_run2",
+            value="route1_run2",
         )
         self.own_profile = Select(
-            title="室内配置 (own_profile)",
-            value="own_branch",
-            options=[("own_branch", "own_branch"), ("package", "package")],
+            title="室内配置 (own_profile)\n留空则自动根据 own 选择",
+            value="",
+            options=[("", "自动"), ("package", "package"), ("own_branch", "own_branch")],
         )
         self.own_dataset_key = TextInput(
             title="室内数据键 (own_dataset_key) — 低层覆盖",
@@ -252,12 +224,17 @@ class GeoMagApp:
             step=50,
             value=200,
         )
+        self.use_explicit_heading = Select(
+            title="使用指定初始航向\n关闭则自动从路线推断",
+            value="False",
+            options=[("False", "自动推断"), ("True", "手动指定")],
+        )
         self.own_initial_heading = Slider(
             title="初始航向角 (own_initial_heading_deg) — 度数，0=+X, 90=+Y",
             start=-180,
             end=180,
             step=5,
-            value=0,
+            value=90,
         )
         self.no_route_initial_heading = Select(
             title="是否使用路线首步航向 (no_route_initial_heading)",
@@ -304,25 +281,32 @@ class GeoMagApp:
         self.step_button = Button(label="下一步", button_type="primary", disabled=True)
         self.step_button.on_click(self._on_step)
         # Data and state
-        self.source = ColumnDataSource(data={"x": [], "y": []})
-        self.full_path: tuple[np.ndarray, np.ndarray] | None = None
+        self.pf_source = ColumnDataSource(data={"x": [], "y": []})
+        self.pdr_source = ColumnDataSource(data={"x": [], "y": []})
+        self.route_source = ColumnDataSource(data={"x": [], "y": []})
+        self.full_result: dict | None = None
         self.current_index: int = 0
         self.plot = figure(
-            title="定位轨迹",
+            title="定位轨迹（绿=真值路线, 橙=PDR, 青=PF）",
             x_axis_label="X (m)",
             y_axis_label="Y (m)",
-            width=600,
-            height=600,
+            width=650,
+            height=650,
             tools="pan,wheel_zoom,box_zoom,reset,save",
             active_scroll="wheel_zoom",
+            match_aspect=True,
         )
-        self.plot.line("x", "y", source=self.source, line_width=2, color="#0072B5")
+        self.plot.line("x", "y", source=self.route_source, line_width=2, color="green", legend_label="真值路线")
+        self.plot.line("x", "y", source=self.pdr_source, line_width=1.5, color="orange", line_dash="dashed", legend_label="PDR")
+        self.plot.line("x", "y", source=self.pf_source, line_width=2, color="cyan", legend_label="PF")
+        self.plot.legend.location = "top_left"
 
         # Layout definition
         controls_col1 = column(
             self.branch_select,
             self.window_size,
             self.max_frames,
+            self.use_explicit_heading,
             self.own_initial_heading,
             self.no_route_initial_heading,
             self.mirror_y,
@@ -376,7 +360,7 @@ class GeoMagApp:
             "own_map_mode": self.own_map_mode.value,
             "own_map_npz_path": self.own_map_npz.value.strip() or None,
             "own_route": self.own_route.value.strip() or None,
-            "own_initial_heading_deg": float(self.own_initial_heading.value),
+            "own_initial_heading_deg": float(self.own_initial_heading.value) if self.use_explicit_heading.value == "True" else None,
             "no_route_initial_heading": (self.no_route_initial_heading.value == "True"),
             "mirror_y": (self.mirror_y.value == "True"),
             "own_heading_offset_deg": float(self.heading_offset.value),
@@ -396,43 +380,44 @@ class GeoMagApp:
 
     def _on_run(self) -> None:
         """Callback for the Run Simulation button."""
-        # Reset state
         self.current_index = 0
-        params = self._collect_params()
-        x_data, y_data = run_simulation(params)
-        # Apply trimming if specified
-        if params.get("own_trim_head"):
-            head = params["own_trim_head"]
-            x_data = x_data[head:]
-            y_data = y_data[head:]
-        if params.get("own_trim_tail"):
-            tail = params["own_trim_tail"]
-            if tail > 0:
-                x_data = x_data[:-tail]
-                y_data = y_data[:-tail]
-        self.full_path = (x_data, y_data)
-        # Initially display the first point (or empty if no data)
-        if len(x_data) > 0:
-            self.source.data = {"x": [x_data[0]], "y": [y_data[0]]}
+        result = run_simulation(self._collect_params())
+        if result is None:
+            self.pf_source.data = {"x": [], "y": []}
+            self.pdr_source.data = {"x": [], "y": []}
+            self.route_source.data = {"x": [], "y": []}
+            self.step_button.disabled = True
+            return
+
+        self.full_result = result
+        # Show full route and PDR immediately as reference
+        route = np.asarray(result.get("route_xy_m", []), dtype=float)
+        pdr = np.asarray(result.get("pdr_track", []), dtype=float)
+        pf = np.asarray(result.get("pf_track", []), dtype=float)
+        if route.ndim == 2 and route.shape[1] >= 2:
+            self.route_source.data = {"x": route[:, 0], "y": route[:, 1]}
+        if pdr.ndim == 2 and pdr.shape[1] >= 2:
+            self.pdr_source.data = {"x": pdr[:, 0], "y": pdr[:, 1]}
+        # Initially show first PF point
+        if pf.ndim == 2 and pf.shape[1] >= 2:
+            self.pf_source.data = {"x": pf[:1, 0], "y": pf[:1, 1]}
             self.current_index = 1
             self.step_button.disabled = False
         else:
-            self.source.data = {"x": [], "y": []}
+            self.pf_source.data = {"x": [], "y": []}
             self.step_button.disabled = True
 
     def _on_step(self) -> None:
         """Advance the trajectory one step and update the plot."""
-        if self.full_path is None:
+        if self.full_result is None:
             return
-        x_data, y_data = self.full_path
-        if self.current_index >= len(x_data):
-            # Disable further steps when end of data reached
+        pf = np.asarray(self.full_result.get("pf_track", []), dtype=float)
+        if pf.ndim != 2 or self.current_index >= pf.shape[0]:
             self.step_button.disabled = True
             return
-        new_x = x_data[: self.current_index + 1]
-        new_y = y_data[: self.current_index + 1]
-        self.source.data = {"x": new_x, "y": new_y}
-        self.current_index += 1
+        idx = self.current_index + 1
+        self.pf_source.data = {"x": pf[:idx, 0], "y": pf[:idx, 1]}
+        self.current_index = idx
 
 
 def main():
