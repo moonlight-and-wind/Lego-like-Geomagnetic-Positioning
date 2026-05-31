@@ -133,18 +133,14 @@ REM ============================================================
 echo Looking for Python 3.11+...
 set "PYTHON_EXE="
 
-REM Try python3 first, then python
-where python3 >nul 2>&1
-if not errorlevel 1 (
-    for /f "delims=" %%P in ('where python3 2^>nul') do (
-        if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
-    )
-)
-if not defined PYTHON_EXE (
-    where python >nul 2>&1
-    if not errorlevel 1 (
-        for /f "delims=" %%P in ('where python 2^>nul') do (
-            if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
+REM Try 'py' launcher first (most reliable on Windows), then 'python', skip 'python3' stubs
+for %%C in (py python) do (
+    if not defined PYTHON_EXE (
+        for /f "delims=" %%P in ('where %%C 2^>nul') do (
+            if not defined PYTHON_EXE (
+                echo %%P | findstr /I "WindowsApps" >nul 2>&1
+                if errorlevel 1 set "PYTHON_EXE=%%P"
+            )
         )
     )
 )
@@ -152,16 +148,22 @@ if not defined PYTHON_EXE (
 if not defined PYTHON_EXE (
     echo ERROR: Python was not found on your system.
     echo.
-    echo Please install one of the following:
-    echo   1. Miniconda: https://docs.conda.io/en/latest/miniconda.html
-    echo   2. Python 3.11+: https://www.python.org/downloads/
+    echo The Microsoft Store Python stub ^(WindowsApps^) does NOT work.
+    echo Please install real Python from one of:
+    echo   1. https://www.python.org/downloads/  ^(recommended^)
+    echo   2. Miniconda: https://docs.conda.io/en/latest/miniconda.html
     echo.
     echo After installing, run this script again.
     exit /b 21
 )
 
 echo Found Python: %PYTHON_EXE%
-"%PYTHON_EXE%" --version
+"%PYTHON_EXE%" --version 2>&1
+if errorlevel 1 (
+    echo ERROR: Python at %PYTHON_EXE% is broken or not functional.
+    echo Please reinstall Python from https://www.python.org/downloads/
+    exit /b 21
+)
 echo.
 
 set "VENV_DIR=%CD%\.venv"
