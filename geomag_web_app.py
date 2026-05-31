@@ -141,9 +141,11 @@ def run_simulation(params: dict) -> dict | None:
     )
     try:
         return run_branch_simulation(cfg)
-    except Exception:
+    except FileNotFoundError as e:
+        return {"error": str(e), "hint": "数据集不存在。route2_run2 请用 own='own_branch' + profile='own_branch'"}
+    except Exception as e:
         logger.exception("Simulation failed.")
-        return None
+        return {"error": str(e)}
 
 
 class GeoMagApp:
@@ -383,10 +385,11 @@ class GeoMagApp:
         self.current_index = 0
         result = run_simulation(self._collect_params())
         if result is None:
-            self.pf_source.data = {"x": [], "y": []}
-            self.pdr_source.data = {"x": [], "y": []}
-            self.route_source.data = {"x": [], "y": []}
-            self.step_button.disabled = True
+            self.title_div.text = "<h2 style='color:red'>仿真失败：未知错误</h2>"
+            return
+        if "error" in result:
+            hint = result.get("hint", "")
+            self.title_div.text = f"<h2 style='color:red'>错误：{result['error']}</h2><p>{hint}</p>"
             return
 
         self.full_result = result
