@@ -1,9 +1,12 @@
 README.md
+geomag_web_app.py
+main.py
 pyproject.toml
 Geomag/__init__.py
 Geomag/algorithms.py
 Geomag/blocks.py
 Geomag/branching.py
+Geomag/distance.py
 Geomag/experiment.py
 Geomag/initiation.py
 Geomag/models.py
@@ -11,8 +14,14 @@ Geomag/nn.py
 Geomag/own_dataset_registry.py
 Geomag/pipeline.py
 Geomag/utils.py
+Geomag/visualization.py
 geomagnetic_positioning_ddtw.egg-info/PKG-INFO
 geomagnetic_positioning_ddtw.egg-info/SOURCES.txt
 geomagnetic_positioning_ddtw.egg-info/dependency_links.txt
+geomagnetic_positioning_ddtw.egg-info/entry_points.txt
 geomagnetic_positioning_ddtw.egg-info/requires.txt
 geomagnetic_positioning_ddtw.egg-info/top_level.txt
+tests/test_blocks.py
+tests/test_distance.py
+tests/test_models.py
+tests/test_nn.py

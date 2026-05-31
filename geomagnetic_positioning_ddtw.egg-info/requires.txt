@@ -1,5 +1,11 @@
 numpy>=1.24
 pykrige>=1.7
 matplotlib>=3.7
-gstools
-pykrige
+gstools>=1.5
+bokeh>=3.0
+
+[dev]
+pytest>=7.0
+pytest-cov>=4.0
+ruff>=0.1
+mypy>=1.0

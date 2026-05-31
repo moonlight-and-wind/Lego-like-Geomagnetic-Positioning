@@ -42,25 +42,21 @@ application.  Running within a notebook or via ``panel`` is not required and
 no external dependencies beyond Bokeh itself are needed.
 """
 
-import json
 import logging
 import math
 import random
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import numpy as np
-
 from bokeh.io import curdoc
 from bokeh.layouts import column, row
 from bokeh.models import (
+    Button,
     ColumnDataSource,
     Div,
+    FileInput,
     Select,
     Slider,
     TextInput,
-    Button,
-    FileInput,
 )
 from bokeh.plotting import figure
 
@@ -86,7 +82,7 @@ except Exception:
     run_branch_simulation = None  # type: ignore
 
 
-def _synthetic_random_walk(n: int = 200) -> Tuple[np.ndarray, np.ndarray]:
+def _synthetic_random_walk(n: int = 200) -> tuple[np.ndarray, np.ndarray]:
     """Generate a simple 2‑D random walk of length ``n``.
 
     This function is used when the real geomagnetic simulation API is not
@@ -102,7 +98,7 @@ def _synthetic_random_walk(n: int = 200) -> Tuple[np.ndarray, np.ndarray]:
     return np.array(x), np.array(y)
 
 
-def run_simulation(params: dict) -> Tuple[np.ndarray, np.ndarray]:
+def run_simulation(params: dict) -> tuple[np.ndarray, np.ndarray]:
     """Run the geomagnetic simulation or fallback synthetic generator.
 
     Parameters
@@ -308,8 +304,8 @@ class GeoMagApp:
         self.step_button = Button(label="下一步", button_type="primary", disabled=True)
         self.step_button.on_click(self._on_step)
         # Data and state
-        self.source = ColumnDataSource(data=dict(x=[], y=[]))
-        self.full_path: Optional[Tuple[np.ndarray, np.ndarray]] = None
+        self.source = ColumnDataSource(data={"x": [], "y": []})
+        self.full_path: tuple[np.ndarray, np.ndarray] | None = None
         self.current_index: int = 0
         self.plot = figure(
             title="定位轨迹",
@@ -366,27 +362,27 @@ class GeoMagApp:
 
     def _collect_params(self) -> dict:
         """Gather parameter values from widgets into a dictionary."""
-        params = dict(
-            branch=self.branch_select.value,
-            window_size=int(self.window_size.value),
-            max_frames=int(self.max_frames.value) if self.max_frames.value > 0 else None,
-            uji=self.uji_input.value.strip(),
-            uji_test_file=self.uji_test_file.value.strip() or None,
-            uji_data_root=self.uji_data_root.value.strip() or None,
-            own=self.own_input.value.strip(),
-            own_profile=self.own_profile.value if self.own_profile.value else None,
-            own_dataset_key=self.own_dataset_key.value.strip() or None,
-            own_data_dir=self.own_data_dir.value.strip() or None,
-            own_map_mode=self.own_map_mode.value,
-            own_map_npz_path=self.own_map_npz.value.strip() or None,
-            own_route=self.own_route.value.strip() or None,
-            own_initial_heading_deg=float(self.own_initial_heading.value),
-            no_route_initial_heading=(self.no_route_initial_heading.value == "True"),
-            mirror_y=(self.mirror_y.value == "True"),
-            own_heading_offset_deg=float(self.heading_offset.value),
-            own_trim_head=int(self.trim_head.value),
-            own_trim_tail=int(self.trim_tail.value),
-        )
+        params = {
+            "branch": self.branch_select.value,
+            "window_size": int(self.window_size.value),
+            "max_frames": int(self.max_frames.value) if self.max_frames.value > 0 else None,
+            "uji": self.uji_input.value.strip(),
+            "uji_test_file": self.uji_test_file.value.strip() or None,
+            "uji_data_root": self.uji_data_root.value.strip() or None,
+            "own": self.own_input.value.strip(),
+            "own_profile": self.own_profile.value if self.own_profile.value else None,
+            "own_dataset_key": self.own_dataset_key.value.strip() or None,
+            "own_data_dir": self.own_data_dir.value.strip() or None,
+            "own_map_mode": self.own_map_mode.value,
+            "own_map_npz_path": self.own_map_npz.value.strip() or None,
+            "own_route": self.own_route.value.strip() or None,
+            "own_initial_heading_deg": float(self.own_initial_heading.value),
+            "no_route_initial_heading": (self.no_route_initial_heading.value == "True"),
+            "mirror_y": (self.mirror_y.value == "True"),
+            "own_heading_offset_deg": float(self.heading_offset.value),
+            "own_trim_head": int(self.trim_head.value),
+            "own_trim_tail": int(self.trim_tail.value),
+        }
         return params
 
     def _on_file_upload(self, attr: str, old: str, new: str) -> None:
@@ -417,11 +413,11 @@ class GeoMagApp:
         self.full_path = (x_data, y_data)
         # Initially display the first point (or empty if no data)
         if len(x_data) > 0:
-            self.source.data = dict(x=[x_data[0]], y=[y_data[0]])
+            self.source.data = {"x": [x_data[0]], "y": [y_data[0]]}
             self.current_index = 1
             self.step_button.disabled = False
         else:
-            self.source.data = dict(x=[], y=[])
+            self.source.data = {"x": [], "y": []}
             self.step_button.disabled = True
 
     def _on_step(self) -> None:
@@ -435,7 +431,7 @@ class GeoMagApp:
             return
         new_x = x_data[: self.current_index + 1]
         new_y = y_data[: self.current_index + 1]
-        self.source.data = dict(x=new_x, y=new_y)
+        self.source.data = {"x": new_x, "y": new_y}
         self.current_index += 1
 
 

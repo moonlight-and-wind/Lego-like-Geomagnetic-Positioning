@@ -2,9 +2,26 @@ Metadata-Version: 2.4
 Name: geomagnetic-positioning-ddtw
 Version: 0.1.0
 Summary: Geomagnetic + IMU fusion experiments with PF/DDTW on UJIIndoorLoc-Mag.
+Author-email: tianhs6523 <kudoumakoto6523@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/tianhs6523/Lego-like-Geomagnetic-Positioning
+Project-URL: Repository, https://github.com/tianhs6523/Lego-like-Geomagnetic-Positioning
+Project-URL: Issues, https://github.com/tianhs6523/Lego-like-Geomagnetic-Positioning/issues
+Keywords: geomagnetic-positioning,indoor-localization,particle-filter,ddtw,pdr,imu
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: GIS
 Requires-Python: >=3.11
 Requires-Dist: numpy>=1.24
 Requires-Dist: pykrige>=1.7
 Requires-Dist: matplotlib>=3.7
-Requires-Dist: gstools
-Requires-Dist: pykrige
+Requires-Dist: gstools>=1.5
+Requires-Dist: bokeh>=3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: ruff>=0.1; extra == "dev"
+Requires-Dist: mypy>=1.0; extra == "dev"

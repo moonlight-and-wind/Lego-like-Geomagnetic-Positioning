@@ -8,7 +8,6 @@ from Geomag.branching import (
     run_branch_simulation,
 )
 
-
 # Change these variables for the usual workflow.
 branch = "own"  # "uji" or "own"
 uji = "2"  # "tt01"..."tt11", "1"..."11", "tt02.txt", or a raw test-file path.

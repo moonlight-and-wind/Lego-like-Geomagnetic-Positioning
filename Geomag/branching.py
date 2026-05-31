@@ -577,7 +577,7 @@ def run_own_branch(config: BranchConfig):
     pf_list = [init_pos]
     pdr_list = [init_pos]
     pf_smooth_x, pf_smooth_y = float(init_pos[0]), float(init_pos[1])
-    EMA_ALPHA = 0.7  # 70% history, 30% new estimate → smooth trajectory
+    ema_alpha = 0.7  # 70% history, 30% new estimate → smooth trajectory
     particle_counts = [len(pf_state.particles)]
     geomag_hist = []
     sample_buffer = []
@@ -613,8 +613,8 @@ def run_own_branch(config: BranchConfig):
             heading_angle=heading_angle,
             geomag_seq=geomag_window,
         )
-        pf_smooth_x = EMA_ALPHA * pf_smooth_x + (1.0 - EMA_ALPHA) * float(pf_xy[0])
-        pf_smooth_y = EMA_ALPHA * pf_smooth_y + (1.0 - EMA_ALPHA) * float(pf_xy[1])
+        pf_smooth_x = ema_alpha * pf_smooth_x + (1.0 - ema_alpha) * float(pf_xy[0])
+        pf_smooth_y = ema_alpha * pf_smooth_y + (1.0 - ema_alpha) * float(pf_xy[1])
         pf_list.append((pf_smooth_x, pf_smooth_y))
         particle_counts.append(len(pf_state.particles))
         sample_buffer.clear()
