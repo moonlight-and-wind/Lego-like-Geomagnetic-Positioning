@@ -28,10 +28,6 @@ Thumbs.db
 # Generated output
 pictures generated/
 results/
-!results/best_final.png
-!results/best_final.json
-!results/full_run.png
-!results/full_run.json
 !results/v7_final_route1_run2.png
 !results/v7_final_route1_run2.json
 !results/v7_final_route2_run1.png
