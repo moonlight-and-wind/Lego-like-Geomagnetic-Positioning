@@ -40,6 +40,10 @@ struct GenericMagneticMapSample: Codable, Hashable, Sendable {
     var magneticYUT: Double? = nil
     var magneticZUT: Double? = nil
     var varianceUT2: Double? = nil
+    /// 来源内方差（不含跨源分歧项）。合并时沿传；旧图没有该键，读侧退回 varianceUT2。
+    /// 跨会话分歧判据必须用它当噪声底：varianceUT2 已被历次 disagreement 抬高，
+    /// 拿它当底会让下一次分歧被判成正常（自我掩蔽，2026-10-28 二进制复现）。
+    var sourceVarianceUT2: Double? = nil
     var observationCount: Int? = nil
     var directionCount: Int? = nil
     var headingRadians: Double? = nil
@@ -95,6 +99,20 @@ struct MagneticMapQualityReport: Sendable {
     }
 }
 
+/// 跨会话同格场强分歧（DESIGN ②「同格两来源幅值分歧」）：只记录，不改图、不阻断导入。
+/// 单次会话内 B_房间 与 B_异常 不可分，跨次对比是唯一能看见静态畸变/物体被移动的地方。
+struct SourceDivergenceSummary: Codable, Hashable, Sendable {
+    /// 判定下限：8 µT ≈ 地磁场的 10%。低于它的差异更可能来自 PDR 定位误差与格内梯度，
+    /// 而不是异常源；同时与既有「中位差 > 8 µT」警告同刻度。
+    static let floorUT: Double = 8
+    let comparedCellCount: Int
+    let divergentCellCount: Int
+    let medianDivergenceUT: Double
+    let maximumDivergenceUT: Double
+    let thresholdUT: Double
+    var hasDivergence: Bool { divergentCellCount > 0 }
+}
+
 struct GenericMagneticMapDocument: Codable, Hashable, Identifiable, Sendable {
     static let schemaVersion = 1
 
@@ -114,6 +132,8 @@ struct GenericMagneticMapDocument: Codable, Hashable, Identifiable, Sendable {
     /// Multiplier learned from known map anchors/route distance and the raw
     /// Core Motion step model. It is applied to later captures before PF.
     var pdrStepLengthScale: Double? = nil
+    /// 合并时计算并持久化：跨会话同格分歧摘要（仅网格图；路径图为 nil）。
+    var sourceDivergence: SourceDivergenceSummary? = nil
 
     var sourceLabel: String { sourceDatasetKeys.joined(separator: ", ") }
 
@@ -226,6 +246,17 @@ struct GenericMagneticMapDocument: Codable, Hashable, Identifiable, Sendable {
         }
         if singleDirection > covered / 2 {
             messages.append("多数网格只有单一行走方向，建议增加与当前方向垂直的扫描。")
+        }
+        // 局部异常不会被中位差看见：一角落的金属被移动时，多数网格仍一致。
+        if let divergence = sourceDivergence, divergence.hasDivergence {
+            messages.append(String(
+                format: "跨会话同格场强分歧：%d/%d 格超过正常散布（最大 %.1f µT）。"
+                    + "同一点位两次采集读数明显不同，常见原因是金属物体被移动或异常源仍在，"
+                    + "建议复核该区域后重新建图。",
+                divergence.divergentCellCount,
+                divergence.comparedCellCount,
+                divergence.maximumDivergenceUT
+            ))
         }
         if messages.isEmpty {
             messages.append("覆盖、样本量和磁场稳定性均达到当前建图要求。")
@@ -363,6 +394,7 @@ enum GenericMagneticMapStore {
         if let duplicate = Set(lhs.sourceDatasetKeys).intersection(rhs.sourceDatasetKeys).first {
             throw StoreError.duplicateSourceDataset(duplicate)
         }
+        let divergence = sourceDivergence(lhs, rhs)
         let cell = lhs.gridCellSizeM ?? rhs.gridCellSizeM ?? 0.4
         struct Key: Hashable { let x: Int; let y: Int }
         struct WeightedSample {
@@ -412,6 +444,14 @@ enum GenericMagneticMapStore {
                 return (sourceVariance + disagreement * disagreement, item.sourceWeight)
             }
             let variance = varianceValues.isEmpty ? nil : weightedMean(varianceValues)
+            // 来源内方差：只平均各来源自己登记的格内方差，不掺 disagreement。
+            let sourceVarianceValues = values.compactMap { item -> (value: Double, weight: Double)? in
+                guard let sourceVariance = item.sample.sourceVarianceUT2 ?? item.sample.varianceUT2 else {
+                    return nil
+                }
+                return (sourceVariance, item.sourceWeight)
+            }
+            let sourceVariance = sourceVarianceValues.isEmpty ? nil : weightedMean(sourceVarianceValues)
             let observations = values.compactMap(\.sample.observationCount).reduce(0, +)
             // Repeating the same heading in another capture adds evidence, not a new direction.
             let directions = values.compactMap(\.sample.directionCount).max()
@@ -450,6 +490,7 @@ enum GenericMagneticMapStore {
             sample.magneticYUT = by
             sample.magneticZUT = bz
             sample.varianceUT2 = variance
+            sample.sourceVarianceUT2 = sourceVariance
             sample.observationCount = observations
             sample.directionCount = directions
             sample.headingRadians = heading
@@ -503,8 +544,59 @@ enum GenericMagneticMapStore {
             coordinateFrame: lhs.coordinateFrame,
             gridCellSizeM: cell,
             samplesFollowPath: lhs.samplesFollowPath == true,
-            pdrStepLengthScale: mergedStepScale
+            pdrStepLengthScale: mergedStepScale,
+            sourceDivergence: divergence
         ).validated()
+    }
+
+    /// 跨会话同格分歧：逐格比较两次采集的场强，判定阈值取「3σ 与 8 µT 的较大者」。
+    /// σ 来自两张图各自登记的**来源内**方差（sourceVarianceUT2）——「超出正常散布」而不是
+    /// 固定绝对差，否则高噪声格会被误报、低噪声格的系统性偏移又会被放过。
+    /// 不能用合并后的 varianceUT2：它已含历次分歧，会让后续分歧自我掩蔽。
+    static func sourceDivergence(
+        _ lhs: GenericMagneticMapDocument,
+        _ rhs: GenericMagneticMapDocument
+    ) -> SourceDivergenceSummary? {
+        guard lhs.samplesFollowPath != true, rhs.samplesFollowPath != true else { return nil }
+        let cell = lhs.gridCellSizeM ?? rhs.gridCellSizeM ?? 0.4
+        guard cell.isFinite, cell > 0 else { return nil }
+        struct Key: Hashable { let x: Int; let y: Int }
+        func keyed(_ document: GenericMagneticMapDocument) -> [Key: GenericMagneticMapSample] {
+            var result: [Key: GenericMagneticMapSample] = [:]
+            for sample in document.samples {
+                result[Key(x: Int(floor(sample.x / cell)), y: Int(floor(sample.y / cell)))] = sample
+            }
+            return result
+        }
+        let left = keyed(lhs)
+        let right = keyed(rhs)
+        var offsets: [Double] = []
+        var maximum = 0.0
+        var divergent = 0
+        for (key, sample) in left {
+            guard let other = right[key] else { continue }
+            let offset = abs(sample.magneticNormUT - other.magneticNormUT)
+            // 噪声底取**来源内**方差：合并后的 varianceUT2 已把历次分歧折进去，
+            // 用它会让 A(50)+B(80) 之后的 C(95) 被判成正常（30 µT < 3√227≈45）。
+            let variance = max(sample.sourceVarianceUT2 ?? sample.varianceUT2 ?? 0, 0)
+                + max(other.sourceVarianceUT2 ?? other.varianceUT2 ?? 0, 0)
+            let limit = max(SourceDivergenceSummary.floorUT, 3 * variance.squareRoot())
+            offsets.append(offset)
+            maximum = max(maximum, offset)
+            if offset > limit { divergent += 1 }
+        }
+        guard !offsets.isEmpty else { return nil }
+        let sorted = offsets.sorted()
+        let median = sorted.count % 2 == 1
+            ? sorted[sorted.count / 2]
+            : (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        return SourceDivergenceSummary(
+            comparedCellCount: offsets.count,
+            divergentCellCount: divergent,
+            medianDivergenceUT: median,
+            maximumDivergenceUT: maximum,
+            thresholdUT: SourceDivergenceSummary.floorUT
+        )
     }
 
     static func mergeQualityWarnings(
@@ -541,6 +633,16 @@ enum GenericMagneticMapStore {
             warnings.append(String(
                 format: "重叠网格磁场模长中位差 %.1f µT，可能存在姿态、设备或环境变化。",
                 medianDifference
+            ))
+        }
+        // 中位差看不见局部异常：补一条逐格计数（判据 = 3σ 与 8 µT 取大者）。
+        if let divergence = sourceDivergence(existing, addition), divergence.hasDivergence {
+            warnings.append(String(
+                format: "有 %d/%d 个重叠网格的场强差异超过正常散布（最大 %.1f µT）："
+                    + "同一点位两次读数明显不同，建议复核是否有金属物体被移动。",
+                divergence.divergentCellCount,
+                divergence.comparedCellCount,
+                divergence.maximumDivergenceUT
             ))
         }
         return warnings

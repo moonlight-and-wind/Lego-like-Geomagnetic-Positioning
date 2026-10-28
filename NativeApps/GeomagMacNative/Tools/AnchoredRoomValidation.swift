@@ -100,7 +100,7 @@ struct AnchoredRoomValidation {
             datasetDirectory: dataset.directoryURL,
             coordinateFrame: dataset.coordinateFrame ?? "local-room",
             anchors: dataset.spatialAnchors,
-            excludedIntervals: dataset.mappingPauseIntervals,
+            excludedIntervals: dataset.mappingPauseIntervals + dataset.mappingDisturbIntervals,
             cellSizeM: 0.25,
             settings: settings,
             progress: { _, _ in }

@@ -488,7 +488,7 @@ final class AppModel: ObservableObject {
                     datasetDirectory: importedDataset.directoryURL,
                     coordinateFrame: importedDataset.coordinateFrame ?? "local-room",
                     anchors: importedDataset.spatialAnchors,
-                    excludedIntervals: importedDataset.mappingPauseIntervals,
+                    excludedIntervals: importedDataset.mappingPauseIntervals + importedDataset.mappingDisturbIntervals,
                     cellSizeM: 0.25,
                     settings: algorithmSettings,
                     progress: callback

@@ -17,6 +17,132 @@ final class NativeEngineTests: XCTestCase {
         XCTAssertEqual(DatasetValidator.readMappingPauseIntervals(url), [1.0...4.0])
     }
 
+    func testDisturbIntervalsPairAndCloseAtStop() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("csv")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("Time (s),Type\n10,disturb_start\n42,disturb_end\n50,disturb_start\n60,recording_stop\n".utf8)
+            .write(to: url)
+
+        XCTAssertEqual(DatasetValidator.readMappingDisturbIntervals(url), [10.0...42.0, 50.0...60.0])
+        // 两类事件互不串味：只有 disturb 的行不应产出暂停区间。
+        XCTAssertEqual(DatasetValidator.readMappingPauseIntervals(url), [])
+    }
+
+    func testMergeRecordsLocalizedCrossSourceDivergence() throws {
+        func document(source: String, norm: Double, shiftedCell: Int? = nil) throws -> GenericMagneticMapDocument {
+            let samples = (0..<8).map { index -> GenericMagneticMapSample in
+                let x = Double(index % 4) * 0.4 + 0.2
+                let y = Double(index / 4) * 0.4 + 0.2
+                let value = index == shiftedCell ? 80.0 : norm
+                return GenericMagneticMapSample(
+                    x: x, y: y, magneticNormUT: value,
+                    magneticXUT: value / 2, magneticYUT: value / 3, magneticZUT: value / 4,
+                    varianceUT2: 1, observationCount: 100, directionCount: 2, headingRadians: 0
+                )
+            }
+            return try GenericMagneticMapDocument(
+                schemaVersion: 1, id: "divergence_room", name: "Divergence Room",
+                createdAt: Date(), sourceDatasetKeys: [source],
+                referenceRoute: [XYPoint(x: 0, y: 0), XYPoint(x: 1.6, y: 0.8)],
+                samples: samples, supportRadiusM: 2,
+                coordinateFrame: "room-a", gridCellSizeM: 0.4,
+                samplesFollowPath: false
+            ).validated()
+        }
+
+        let agreed = try GenericMagneticMapStore.merging(
+            try document(source: "a", norm: 50),
+            with: try document(source: "b", norm: 51)
+        )
+        XCTAssertEqual(agreed.sourceDivergence?.comparedCellCount, 8)
+        XCTAssertEqual(agreed.sourceDivergence?.divergentCellCount, 0)
+        XCTAssertFalse(agreed.qualityReport?.messages.contains { $0.contains("跨会话同格场强分歧") } ?? true)
+
+        // 局部异常：只有一格差 30 µT，中位差仍为 0 —— 旧的中位数判据会放过它。
+        let localized = try GenericMagneticMapStore.merging(
+            try document(source: "c", norm: 50),
+            with: try document(source: "d", norm: 50, shiftedCell: 3)
+        )
+        XCTAssertEqual(localized.sourceDivergence?.divergentCellCount, 1)
+        XCTAssertGreaterThan(localized.sourceDivergence?.maximumDivergenceUT ?? 0, 29)
+        XCTAssertTrue(localized.qualityReport?.messages.contains {
+            $0.contains("跨会话同格场强分歧")
+        } ?? false)
+    }
+
+    func testRepeatedMergesKeepDivergenceVisible() throws {
+        func document(source: String, norm: Double) throws -> GenericMagneticMapDocument {
+            var samples: [GenericMagneticMapSample] = []
+            var index = 0
+            while index < 16 {
+                var sample = GenericMagneticMapSample(
+                    x: Double(index % 4) + 0.5,
+                    y: Double(index / 4) + 0.5,
+                    magneticNormUT: index == 0 ? norm : 50
+                )
+                sample.varianceUT2 = 1
+                sample.sourceVarianceUT2 = 1
+                sample.observationCount = 100
+                sample.directionCount = 2
+                samples.append(sample)
+                index += 1
+            }
+            return try GenericMagneticMapDocument(
+                schemaVersion: 1, id: "repeated_divergence", name: "Repeated Divergence",
+                createdAt: Date(), sourceDatasetKeys: [source],
+                referenceRoute: [XYPoint(x: 0.5, y: 0.5), XYPoint(x: 3.5, y: 3.5)],
+                samples: samples, supportRadiusM: 1,
+                coordinateFrame: "room-a", gridCellSizeM: 1, samplesFollowPath: false
+            ).validated()
+        }
+
+        let first = try GenericMagneticMapStore.merging(
+            try document(source: "a", norm: 50),
+            with: try document(source: "b", norm: 80)
+        )
+        XCTAssertEqual(first.sourceDivergence?.divergentCellCount, 1)
+        // 合并后的 varianceUT2 被分歧抬高（≈226），来源内方差必须保持 ≈1。
+        XCTAssertEqual(first.samples[0].sourceVarianceUT2 ?? -1, 1, accuracy: 1e-9)
+        XCTAssertGreaterThan(first.samples[0].varianceUT2 ?? 0, 100)
+
+        // 第三次合并：旧实现拿抬高后的方差当噪声底（3√227≈45），30 µT 的分歧被吞掉。
+        let second = try GenericMagneticMapStore.merging(first, with: try document(source: "c", norm: 95))
+        XCTAssertEqual(second.sourceDivergence?.divergentCellCount, 1)
+        XCTAssertGreaterThan(second.sourceDivergence?.maximumDivergenceUT ?? 0, 29)
+        XCTAssertTrue(second.qualityReport?.messages.contains {
+            $0.contains("跨会话同格场强分歧")
+        } ?? false)
+    }
+
+    func testDisturbEventPairingKeepsEarliestStartAndSurvivesBackdatedClose() throws {
+        func read(_ csv: String) throws -> [ClosedRange<Double>] {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("csv")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try Data(csv.utf8).write(to: url)
+            return DatasetValidator.readMappingDisturbIntervals(url)
+        }
+
+        // 重复开点：保留最早的 10，旧实现被 20 覆盖后只剩 [20…30]。
+        XCTAssertEqual(
+            try read("Time (s),Type\n10,disturb_start\n20,disturb_start\n30,disturb_end\n"),
+            [10.0...30.0]
+        )
+        // 倒流的 end 被忽略但不清开点，收尾事件仍能闭合；旧实现产出 []。
+        XCTAssertEqual(
+            try read("Time (s),Type\n10,disturb_start\n8,disturb_end\n30,recording_stop\n"),
+            [10.0...30.0]
+        )
+        // 未闭合的开点延续到结束（中断采集）。
+        let open = try read("Time (s),Type\n12,disturb_start\n")
+        XCTAssertEqual(open.count, 1)
+        XCTAssertEqual(open[0].lowerBound, 12)
+        XCTAssertGreaterThan(open[0].upperBound, 1e9)
+    }
+
     func testTurnContinuityGuardSuppressesSidewaysModeJumpWithoutMapCorner() {
         let previous = XYPoint(x: 5.8, y: 4.8)
         let raw = XYPoint(x: 5.57, y: 4.77)

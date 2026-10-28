@@ -162,6 +162,9 @@ struct ImportedDataset: Hashable {
     let coordinateFrame: String?
     let spatialAnchors: [ImportedSpatialAnchor]
     let mappingPauseIntervals: [ClosedRange<Double>]
+    /// 磁场受扰区间（disturb_start/disturb_end，App 2.4+ 写入）：人静止而场在变的时段。
+    /// 与暂停区间分开保存（语义不同），建图时与暂停区间合并排除。
+    let mappingDisturbIntervals: [ClosedRange<Double>]
     let activeInterval: MotionIntervalSummary
     let quality: CaptureQualityAssessment
     let warnings: [String]
@@ -308,7 +311,12 @@ enum DatasetValidator {
             : metadata?.initialHeadingDegrees
         let mappingPauseIntervals = filesByName["spatialevents.csv"]
             .map(readMappingPauseIntervals) ?? []
+        let mappingDisturbIntervals = filesByName["spatialevents.csv"]
+            .map(readMappingDisturbIntervals) ?? []
         var warnings: [String] = []
+        if !mappingDisturbIntervals.isEmpty {
+            warnings.append("检测到 \(mappingDisturbIntervals.count) 段磁场受扰（人静止时场在变），已从建图排除。")
+        }
         if locationURL == nil {
             warnings.append("未找到 Location.csv；当前算法不依赖 GPS，可以继续运行。")
         }
@@ -359,6 +367,7 @@ enum DatasetValidator {
             coordinateFrame: metadata?.coordinateFrame,
             spatialAnchors: spatialAnchors,
             mappingPauseIntervals: mappingPauseIntervals,
+            mappingDisturbIntervals: mappingDisturbIntervals,
             activeInterval: activeInterval,
             quality: quality,
             warnings: warnings
@@ -911,30 +920,49 @@ enum DatasetValidator {
     }
 
     static func readMappingPauseIntervals(_ url: URL) -> [ClosedRange<Double>] {
+        readMappingIntervals(url, opening: ["pause"], closing: ["resume", "recording_stop"])
+    }
+
+    /// 磁场受扰区间：disturb_start/disturb_end 成对（App 2.4 起写入 SpatialEvents.csv）。
+    /// 单取一个 reader 而不是塞进暂停：两者语义不同（暂停=人主动停，受扰=数据不可信），
+    /// 但消费方式相同——建图时与暂停区间合并排除。
+    static func readMappingDisturbIntervals(_ url: URL) -> [ClosedRange<Double>] {
+        readMappingIntervals(url, opening: ["disturb_start"], closing: ["disturb_end", "recording_stop"])
+    }
+
+    /// 成对事件 → 闭区间。未闭合的开区间延续到结束；recording_stop 兜底闭合。
+    private static func readMappingIntervals(_ url: URL, opening: Set<String>,
+                                             closing: Set<String>) -> [ClosedRange<Double>] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let lines = text.split(whereSeparator: \.isNewline)
         guard let header = lines.first else { return [] }
         let headers = parseCSVLine(String(header)).map(normalizeHeader)
         guard let timeIndex = headers.firstIndex(of: normalizeHeader("Time (s)")),
               let typeIndex = headers.firstIndex(of: normalizeHeader("Type")) else { return [] }
-        var pauseStart: Double?
+        var openStart: Double?
         var intervals: [ClosedRange<Double>] = []
         for line in lines.dropFirst() {
             let fields = parseCSVLine(String(line))
             guard fields.indices.contains(timeIndex), fields.indices.contains(typeIndex),
                   let time = numeric(fields[timeIndex]) else { continue }
-            switch fields[typeIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-            case "pause": pauseStart = time
-            case "resume":
-                if let start = pauseStart, time >= start { intervals.append(start...time) }
-                pauseStart = nil
-            case "recording_stop":
-                if let start = pauseStart, time >= start { intervals.append(start...time) }
-                pauseStart = nil
-            default: break
+            let type = fields[typeIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if opening.contains(type) {
+                // 重复的开始事件保留**最早**那个：后来的开始只说明"仍在受扰"，
+                // 覆盖会把前一段静默吞掉（10 start / 20 start / 30 end 原只剩 20–30）。
+                if openStart == nil {
+                    openStart = time
+                }
+            } else if closing.contains(type) {
+                // 时间倒流的 end 一律忽略，且**不清掉**开点：清掉会让整段区间消失
+                // （10 start / 8 end / 30 recording_stop 原产出 []）。未闭合时按
+                // 「延续到结束」处理，与中断采集的既有语义一致。
+                if let start = openStart, time >= start {
+                    intervals.append(start...time)
+                    openStart = nil
+                }
             }
         }
-        if let start = pauseStart {
+        if let start = openStart {
             intervals.append(start...Double.greatestFiniteMagnitude)
         }
         return intervals
