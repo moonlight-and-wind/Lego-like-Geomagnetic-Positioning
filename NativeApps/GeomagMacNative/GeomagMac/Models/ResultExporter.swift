@@ -1,6 +1,15 @@
 import AppKit
 import Foundation
 
+struct ExportLayers {
+    var trueRoute = true
+    var pdr = true
+    var pf = true
+    var confidence = true
+
+    static let all = ExportLayers()
+}
+
 struct ExportedResultFiles {
     let pngURL: URL
     let csvURL: URL
@@ -116,7 +125,10 @@ enum ResultExporter {
         return Data((lines.joined(separator: "\n") + "\n").utf8)
     }
 
-    static func renderPNG(result: PositioningResult) throws -> Data {
+    static func renderPNG(
+        result: PositioningResult,
+        layers: ExportLayers = .all
+    ) throws -> Data {
         let pixelWidth = 1600
         let pixelHeight = 1000
         guard let bitmap = NSBitmapImageRep(
@@ -136,7 +148,12 @@ enum ResultExporter {
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphicsContext
-        draw(result: result, in: graphicsContext.cgContext, size: CGSize(width: pixelWidth, height: pixelHeight))
+        draw(
+            result: result,
+            layers: layers,
+            in: graphicsContext.cgContext,
+            size: CGSize(width: pixelWidth, height: pixelHeight)
+        )
         NSGraphicsContext.restoreGraphicsState()
 
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
@@ -184,7 +201,26 @@ enum ResultExporter {
         String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
-    private static func draw(result: PositioningResult, in context: CGContext, size: CGSize) {
+    static func renderPDF(
+        result: PositioningResult,
+        mapName: String,
+        gridCellSize: Double?,
+        layers: ExportLayers = .all
+    ) throws -> Data {
+        try ReportExporter.renderPDF(
+            result: result,
+            mapName: mapName,
+            gridCellSize: gridCellSize,
+            layers: layers
+        )
+    }
+
+    private static func draw(
+        result: PositioningResult,
+        layers: ExportLayers,
+        in context: CGContext,
+        size: CGSize
+    ) {
         let fullRect = CGRect(origin: .zero, size: size)
         context.setFillColor(NSColor(calibratedRed: 0.035, green: 0.045, blue: 0.065, alpha: 1).cgColor)
         context.fill(fullRect)
@@ -218,61 +254,73 @@ enum ResultExporter {
 
         let allPoints = result.routeXY + result.pdrTrack + result.pfTrack
         if let bounds = Bounds(points: allPoints) {
-            drawConfidence(
-                points: result.pfTrack,
-                confidence: result.pfConfidenceHistory ?? [],
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawPolyline(
-                result.routeXY,
-                color: NSColor.white.withAlphaComponent(0.92),
-                lineWidth: 4,
-                dash: [],
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawPolyline(
-                result.pdrTrack,
-                color: NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1),
-                lineWidth: 5,
-                dash: [],
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawPolyline(
-                result.pfTrack,
-                color: NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.16, alpha: 1),
-                lineWidth: 5,
-                dash: [16, 10],
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawRecoveryMarkers(
-                points: result.pfTrack,
-                events: result.localizationRecoveryEvents ?? [],
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawEndpoint(
-                result.pdrTrack.last,
-                color: NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1),
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
-            drawEndpoint(
-                result.pfTrack.last,
-                color: NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.16, alpha: 1),
-                bounds: bounds,
-                plotRect: plotRect,
-                context: context
-            )
+            if layers.confidence, layers.pf {
+                drawConfidence(
+                    points: result.pfTrack,
+                    confidence: result.pfConfidenceHistory ?? [],
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
+            if layers.trueRoute {
+                drawPolyline(
+                    result.routeXY,
+                    color: NSColor.white.withAlphaComponent(0.92),
+                    lineWidth: 4,
+                    dash: [],
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
+            if layers.pdr {
+                drawPolyline(
+                    result.pdrTrack,
+                    color: NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1),
+                    lineWidth: 5,
+                    dash: [],
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
+            if layers.pf {
+                drawPolyline(
+                    result.pfTrack,
+                    color: NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.16, alpha: 1),
+                    lineWidth: 5,
+                    dash: [16, 10],
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+                drawRecoveryMarkers(
+                    points: result.pfTrack,
+                    events: result.localizationRecoveryEvents ?? [],
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
+            if layers.pdr {
+                drawEndpoint(
+                    result.pdrTrack.last,
+                    color: NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1),
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
+            if layers.pf {
+                drawEndpoint(
+                    result.pfTrack.last,
+                    color: NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.16, alpha: 1),
+                    bounds: bounds,
+                    plotRect: plotRect,
+                    context: context
+                )
+            }
             drawText(
                 String(format: "%.1f × %.1f m", bounds.width, bounds.height),
                 at: CGPoint(x: plotRect.maxX - 130, y: plotRect.minY + 24),
@@ -289,6 +337,7 @@ enum ResultExporter {
 
         drawLegend(
             at: CGPoint(x: 74, y: 145),
+            layers: layers,
             hasPF: !result.pfTrack.isEmpty,
             hasConfidence: !(result.pfConfidenceHistory?.isEmpty ?? true),
             context: context
@@ -434,15 +483,23 @@ enum ResultExporter {
 
     private static func drawLegend(
         at origin: CGPoint,
+        layers: ExportLayers,
         hasPF: Bool,
         hasConfidence: Bool,
         context: CGContext
     ) {
-        var entries: [(String, NSColor, Bool)] = [
-            ("真实路线", .white, false),
-            ("PDR 路线", NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1), false),
-        ]
-        if hasPF {
+        var entries: [(String, NSColor, Bool)] = []
+        if layers.trueRoute {
+            entries.append(("真实路线", .white, false))
+        }
+        if layers.pdr {
+            entries.append((
+                "PDR 路线",
+                NSColor(calibratedRed: 0.10, green: 0.84, blue: 0.92, alpha: 1),
+                false
+            ))
+        }
+        if layers.pf, hasPF {
             entries.append((
                 "PF 地磁匹配",
                 NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.16, alpha: 1),
@@ -468,7 +525,7 @@ enum ResultExporter {
             )
             x += title == "PF 地磁匹配" ? 225 : 190
         }
-        if hasConfidence {
+        if layers.pf, layers.confidence, hasConfidence {
             let circle = CGRect(x: x + 8, y: origin.y - 2, width: 22, height: 22)
             context.setFillColor(NSColor.systemOrange.withAlphaComponent(0.08).cgColor)
             context.fillEllipse(in: circle)

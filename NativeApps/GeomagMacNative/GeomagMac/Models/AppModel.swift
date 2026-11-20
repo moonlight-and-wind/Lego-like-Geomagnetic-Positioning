@@ -1,5 +1,13 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
+
+enum ResultSource: Equatable {
+    case liveRun
+    case history
+    case openedFile
+    case bundledSample
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -23,14 +31,54 @@ final class AppModel: ObservableObject {
     ]
 
     @Published var result: PositioningResult?
+    @Published var stage: Stage = .analysis {
+        didSet {
+            UserDefaults.standard.set(stage.rawValue, forKey: "geomag.stage")
+        }
+    }
+    @Published var resultSource: ResultSource = .bundledSample
+    @Published var selectedStepIndex: Int?
+    @Published var inspectorVisible = true {
+        didSet {
+            UserDefaults.standard.set(inspectorVisible, forKey: "geomag.inspectorVisible")
+        }
+    }
+    @Published var runsRailVisible = true {
+        didSet {
+            UserDefaults.standard.set(runsRailVisible, forKey: "geomag.runsRailVisible")
+        }
+    }
+    @Published var inspectorScrollTarget: String?
+    @Published var inspectorScrollToken = UUID()
+    @Published var isFocusMode = false
+    @Published var isCompact = false
     @Published var selectedSampleID = samples[0].id
     @Published var loadedFileName = ""
     @Published var errorMessage: String?
     @Published var playbackProgress = 1.0
-    @Published var showTrueRoute = true
-    @Published var showPDR = true
-    @Published var showPF = true
-    @Published var showPFConfidence = true
+    @Published var showTrueRoute = true {
+        didSet {
+            UserDefaults.standard.set(showTrueRoute, forKey: "geomag.showTrueRoute")
+        }
+    }
+    @Published var showPDR = true {
+        didSet {
+            UserDefaults.standard.set(showPDR, forKey: "geomag.showPDR")
+        }
+    }
+    @Published var showPF = true {
+        didSet {
+            UserDefaults.standard.set(showPF, forKey: "geomag.showPF")
+        }
+    }
+    @Published var showPFConfidence = true {
+        didSet {
+            UserDefaults.standard.set(
+                showPFConfidence,
+                forKey: "geomag.showPFConfidence"
+            )
+        }
+    }
     @Published var runInputMode: RunInputMode = .bundled
     @Published var selectedRunDatasetID = runnableDatasets[0].id
     @Published var importedDataset: ImportedDataset?
@@ -44,6 +92,7 @@ final class AppModel: ObservableObject {
     @Published var lastOutputPath = ""
     @Published var exportMessage: String?
     @Published private(set) var recentRuns: [RunRecord] = []
+    @Published private(set) var runSummaries: [String: RunSummary] = [:]
     @Published private(set) var selectedAlgorithmPreset: AlgorithmPreset
     @Published private(set) var algorithmSettings: AlgorithmSettings
     @Published var selectedMagneticMapID = ""
@@ -54,6 +103,7 @@ final class AppModel: ObservableObject {
 
     private var nativeTask: Task<Void, Never>?
     private var nativeEngineTask: Task<PositioningResult, Error>?
+    private var runSummaryTask: Task<Void, Never>?
 
     private struct RunRequest {
         let datasetKey: String
@@ -143,6 +193,13 @@ final class AppModel: ObservableObject {
         magneticMaps.first { $0.id == selectedMagneticMapID }
     }
 
+    var selectedMapSummary: String {
+        guard let map = mapForCurrentSelection else {
+            return "尚未选择磁图"
+        }
+        return "已选择 \(map.document.name) · 参考采集 \(map.document.sourceLabel)"
+    }
+
     var selectedMagneticMapQuality: MagneticMapQualityReport? {
         selectedMagneticMap?.document.qualityReport
     }
@@ -221,6 +278,102 @@ final class AppModel: ObservableObject {
         return "使用当前数据和下次运行参数开始定位计算"
     }
 
+    var pipelineReadiness: PipelineReadiness {
+        let usesBundled = runInputMode == .bundled
+        let headingText = customInitialHeadingText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let headingIsValid = headingText.isEmpty || Double(headingText)?.isFinite == true
+        let inputs = PipelineInputs(
+            hasDataset: usesBundled ? true : importedDataset != nil,
+            usesBundledDataset: usesBundled,
+            datasetNameIsEmpty: customDatasetName
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty,
+            routeIsValid: DatasetValidator.normalizedRouteText(customRouteText) != nil,
+            routeGeometryIsValid: DatasetValidator.routeGeometryIssue(customRouteText) == nil,
+            headingIsValid: headingIsValid,
+            routeIsInsideMap: usesBundled ? true : routeMapValidation.isValid,
+            hasMap: mapForCurrentSelection != nil,
+            mapBuiltFromCurrentDataset: usesBundled == false && selectedMapUsesCurrentDataset,
+            coordinateFrameMatches: coordinateFrameMatchesSelectedMap,
+            localizationModeNeedsHeading: currentLocalizationMode == .roomAreaKnownStart,
+            hasExplicitHeading: roomModeHasExplicitInitialHeading,
+            isRunning: isBackendRunning,
+            hasResult: result != nil
+        )
+        return PipelineReadiness.evaluate(inputs)
+    }
+
+    var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
+    func canEnter(_ target: Stage) -> Bool {
+        let readiness = pipelineReadiness
+        switch target {
+        case .data:
+            return true
+        case .map:
+            return readiness.dataReady
+        case .run:
+            return readiness.dataReady
+                && readiness.mapReady
+                && readiness.routeReady
+                && readiness.headingReady
+        case .analysis:
+            return result != nil
+        }
+    }
+
+    func go(to target: Stage) {
+        guard stage != target else { return }
+        stage = target
+        if target != .analysis {
+            selectedStepIndex = nil
+            isFocusMode = false
+        }
+    }
+
+    func advanceFromCurrentStage() {
+        switch stage {
+        case .data:
+            guard pipelineReadiness.dataReady else { return }
+            go(to: .map)
+        case .map:
+            let readiness = pipelineReadiness
+            guard readiness.dataReady,
+                  readiness.mapReady,
+                  readiness.routeReady,
+                  readiness.headingReady else { return }
+            go(to: .run)
+        case .run:
+            runSelectedDataset()
+        case .analysis:
+            break
+        }
+    }
+
+    func importDroppedItem(at url: URL) {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            errorMessage = "找不到拖入的文件或文件夹：\(url.lastPathComponent)"
+            return
+        }
+        if isDirectory.boolValue {
+            importDataset(at: url)
+            if importedDataset != nil {
+                go(to: .data)
+            }
+        } else if url.pathExtension.lowercased() == "json" {
+            if load(url: url) {
+                resultSource = .openedFile
+                go(to: .analysis)
+            }
+        } else {
+            errorMessage = "只能拖入采集文件夹或结果 JSON。"
+        }
+    }
+
     var importedDatasetStatus: String {
         guard let importedDataset else { return "尚未选择采集文件夹" }
         if DatasetValidator.normalizedRouteText(customRouteText) == nil {
@@ -238,15 +391,90 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        let defaults = UserDefaults.standard
+        showTrueRoute = defaults.object(forKey: "geomag.showTrueRoute") as? Bool ?? true
+        showPDR = defaults.object(forKey: "geomag.showPDR") as? Bool ?? true
+        showPF = defaults.object(forKey: "geomag.showPF") as? Bool ?? true
+        showPFConfidence = defaults.object(forKey: "geomag.showPFConfidence") as? Bool ?? true
+        inspectorVisible = defaults.object(forKey: "geomag.inspectorVisible") as? Bool ?? true
+        runsRailVisible = defaults.object(forKey: "geomag.runsRailVisible") as? Bool ?? true
+
         let restored = Self.restoreAlgorithmConfiguration()
         selectedAlgorithmPreset = restored.preset
         algorithmSettings = restored.settings
-        loadBundledSample(id: selectedSampleID)
+        loadBundledSample(id: selectedSampleID, presentResult: false)
         refreshRunHistory()
         refreshMagneticMaps()
+
+        #if DEBUG
+        if let mapID = ProcessInfo.processInfo.environment["GEOMAG_MAP_ID"],
+           magneticMaps.contains(where: { $0.id == mapID }) {
+            runInputMode = .imported
+            selectedMagneticMapID = mapID
+        }
+        #endif
+
+        let restoredStage = (UserDefaults.standard.object(forKey: "geomag.stage") as? Int)
+            .flatMap(Stage.init(rawValue:))
+        if let restoredStage, canEnter(restoredStage) {
+            stage = restoredStage
+        } else if result != nil {
+            stage = .analysis
+        } else {
+            stage = .data
+        }
+
+        #if DEBUG
+        if let rawStage = ProcessInfo.processInfo.environment["GEOMAG_STAGE"],
+           let value = Int(rawStage),
+           let forcedStage = Stage(rawValue: value) {
+            stage = forcedStage
+        }
+        if ProcessInfo.processInfo.environment["GEOMAG_AUTORUN"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.runSelectedDataset()
+            }
+        }
+        if let pdfPath = ProcessInfo.processInfo.environment["GEOMAG_EXPORT_PDF"],
+           let result,
+           let data = try? ResultExporter.renderPDF(
+               result: result,
+               mapName: mapForCurrentSelection?.document.name ?? "—",
+               gridCellSize: mapForCurrentSelection?.document.gridCellSizeM,
+               layers: exportLayers
+           ) {
+            try? data.write(to: URL(fileURLWithPath: pdfPath))
+        }
+        if ProcessInfo.processInfo.environment["GEOMAG_FOCUS"] == "1" {
+            isFocusMode = true
+        }
+        if ProcessInfo.processInfo.environment["GEOMAG_HISTORY"] == "1",
+           let run = recentRuns.first {
+            loadRun(run)
+        }
+        if ProcessInfo.processInfo.environment["GEOMAG_DIAGNOSTICS"] == "1" {
+            inspectorVisible = true
+            inspectorScrollTarget = "diagnostics"
+            inspectorScrollToken = UUID()
+        }
+        if let progressText = ProcessInfo.processInfo.environment["GEOMAG_PROGRESS"],
+           let progressValue = Double(progressText) {
+            playbackProgress = min(max(progressValue, 0), 1)
+        }
+        if let stepText = ProcessInfo.processInfo.environment["GEOMAG_STEP"],
+           let stepValue = Int(stepText),
+           let result,
+           result.pfTrack.indices.contains(stepValue) {
+            selectedStepIndex = stepValue
+            playbackProgress = TrajectoryAnalysis.progress(
+                forStep: stepValue,
+                pointCount: result.pfTrack.count
+            )
+        }
+        #endif
     }
 
-    func loadBundledSample(id: String) {
+    func loadBundledSample(id: String, presentResult: Bool = true) {
         selectedSampleID = id
         guard let url = Bundle.main.url(
             forResource: id,
@@ -256,7 +484,11 @@ final class AppModel: ObservableObject {
             errorMessage = "找不到内置示例：\(id).json"
             return
         }
-        load(url: url)
+        guard load(url: url) else { return }
+        resultSource = .bundledSample
+        if presentResult {
+            stage = .analysis
+        }
     }
 
     func selectMagneticMapForBundledDataset() {
@@ -277,7 +509,9 @@ final class AppModel: ObservableObject {
         panel.canChooseDirectories = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        load(url: url)
+        guard load(url: url) else { return }
+        resultSource = .openedFile
+        stage = .analysis
     }
 
     func chooseImportedDatasetDirectory() {
@@ -363,9 +597,9 @@ final class AppModel: ObservableObject {
             backendProgress = 0
             backendStatus = "正在进行原生计算 \(request.datasetKey)…"
             isBackendRunning = true
-            let engineTask = Task.detached(priority: .userInitiated) {
+            let engineTask = Task.detached(priority: .userInitiated) { [weak self] in
                 try NativePositioningEngine.run(request: engineRequest) { progress, status in
-                    DispatchQueue.main.async { [weak self] in
+                    DispatchQueue.main.async {
                         guard let self, self.isBackendRunning else { return }
                         self.backendProgress = progress
                         self.backendStatus = status
@@ -405,7 +639,12 @@ final class AppModel: ObservableObject {
                     self.backendProgress = 1
                     self.backendStatus = "原生计算完成，结果已加载"
                     self.lastOutputPath = jsonURL.path
-                    self.load(url: jsonURL)
+                    if self.load(url: jsonURL) {
+                        self.resultSource = .liveRun
+                        if self.stage == .run {
+                            self.stage = .analysis
+                        }
+                    }
                     self.refreshRunHistory()
                 } catch is CancellationError {
                     self.isBackendRunning = false
@@ -474,9 +713,9 @@ final class AppModel: ObservableObject {
         let interval = importedDataset.activeInterval
         isMagneticMapBuilding = true
         magneticMapStatus = "正在把参考采集转换为坐标磁图…"
-        let job = Task.detached(priority: .userInitiated) { [algorithmSettings] in
+        let job = Task.detached(priority: .userInitiated) { [weak self, algorithmSettings] in
             let callback: @Sendable (Double, String) -> Void = { progress, status in
-                DispatchQueue.main.async { [weak self] in
+                DispatchQueue.main.async {
                     self?.magneticMapStatus = "\(Int((progress * 100).rounded()))% · \(status)"
                 }
             }
@@ -597,15 +836,48 @@ final class AppModel: ObservableObject {
                     return RunRecord(jsonURL: url, modifiedAt: date)
                 }
                 .sorted { $0.modifiedAt > $1.modifiedAt }
+            loadRunSummaries()
         } catch {
             recentRuns = []
+            runSummaries = [:]
+        }
+    }
+
+    private func loadRunSummaries() {
+        runSummaryTask?.cancel()
+        let records = recentRuns
+        let paths = Set(records.map(\.jsonURL.path))
+        runSummaries = runSummaries.filter { paths.contains($0.key) }
+        let pending = records.filter { runSummaries[$0.jsonURL.path] == nil }
+        guard !pending.isEmpty else { return }
+
+        runSummaryTask = Task { [weak self] in
+            var batch: [String: RunSummary] = [:]
+            for (index, record) in pending.enumerated() {
+                if Task.isCancelled { return }
+                let data = await Task.detached(priority: .utility) {
+                    try? Data(contentsOf: record.jsonURL)
+                }.value
+                if let data, let summary = RunSummary.decode(data) {
+                    batch[record.jsonURL.path] = summary
+                }
+                if index % 8 == 7, !batch.isEmpty {
+                    self?.runSummaries.merge(batch) { _, new in new }
+                    batch.removeAll()
+                }
+            }
+            if !batch.isEmpty {
+                self?.runSummaries.merge(batch) { _, new in new }
+            }
         }
     }
 
     func loadRun(_ record: RunRecord) {
-        load(url: record.jsonURL)
+        guard load(url: record.jsonURL) else { return }
+        resultSource = .history
         lastOutputPath = record.jsonURL.path
         backendStatus = "已加载历史结果"
+        stage = .analysis
     }
 
     func revealRun(_ record: RunRecord) {
@@ -627,57 +899,159 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func exportCurrentResult() {
+    var exportLayers: ExportLayers {
+        ExportLayers(
+            trueRoute: showTrueRoute,
+            pdr: showPDR,
+            pf: showPF,
+            confidence: showPFConfidence
+        )
+    }
+
+    var conclusionText: String {
+        guard let result else { return "" }
+        let mapName = mapForCurrentSelection?.document.name ?? "—"
+        var lines = [
+            "GeomagMac · \(result.friendlyTitle)",
+            "数据集: \(result.datasetKey)",
+            "路线: \(result.routeLabel)",
+            "磁图: \(mapName)",
+            "步数: \(result.stepsDetected.map(String.init) ?? "—")",
+            "PF 终点误差: \(meters(result.pfErrorStats?.final))",
+            "PDR 终点误差: \(meters(result.pdrErrorStats?.final))",
+            "PF 横向误差: \(meters(result.pfCrossTrackErrorStats?.mean))",
+            "PF 闭合误差: \(meters(result.pfClosureErrorM))",
+        ]
+        if let score = result.overallPFConfidenceScore {
+            lines.append("平均可靠度: \(Int((score * 100).rounded()))%")
+        }
+        if let duration = result.activeWalkInterval?.duration {
+            lines.append(String(format: "有效行走: %.1f s", duration))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func exportCurrentViewPNG() {
         guard let result else {
             errorMessage = "当前没有可以导出的定位结果。"
             return
         }
-
-        let panel = NSOpenPanel()
-        panel.title = "选择 PNG 和 CSV 导出文件夹"
-        panel.prompt = "导出到这里"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        if let savedPath = UserDefaults.standard.string(forKey: "resultExportDirectory"),
-           FileManager.default.fileExists(atPath: savedPath) {
-            panel.directoryURL = URL(fileURLWithPath: savedPath, isDirectory: true)
-        }
-
-        guard panel.runModal() == .OK, let directoryURL = panel.url else { return }
-
+        let panel = savePanel(
+            contentType: .png,
+            defaultName: "\(exportBaseName(result)).png"
+        )
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let safeDatasetName = result.datasetKey
-                .replacingOccurrences(of: "/", with: "-")
-                .replacingOccurrences(of: ":", with: "-")
-            let baseName = "\(safeDatasetName)-\(Self.fileTimestamp())"
-            let files = try ResultExporter.export(
+            let data = try ResultExporter.renderPNG(
                 result: result,
-                to: directoryURL,
-                baseName: baseName
+                layers: exportLayers
             )
-            UserDefaults.standard.set(directoryURL.path, forKey: "resultExportDirectory")
-            exportMessage = "已导出：\n\(files.pngURL.lastPathComponent)\n\(files.csvURL.lastPathComponent)"
+            try data.write(to: url, options: .atomic)
+            exportMessage = "已导出：\n\(url.lastPathComponent)"
         } catch {
-            errorMessage = "导出失败：\(error.localizedDescription)"
+            errorMessage = "导出 PNG 失败：\(error.localizedDescription)"
         }
     }
 
-    func load(url: URL) {
+    func exportReportPDF() {
+        guard let result else {
+            errorMessage = "当前没有可以导出的定位结果。"
+            return
+        }
+        let panel = savePanel(
+            contentType: .pdf,
+            defaultName: "\(exportBaseName(result)).pdf"
+        )
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try ResultExporter.renderPDF(
+                result: result,
+                mapName: mapForCurrentSelection?.document.name ?? "—",
+                gridCellSize: mapForCurrentSelection?.document.gridCellSizeM,
+                layers: exportLayers
+            )
+            try data.write(to: url, options: .atomic)
+            exportMessage = "已导出：\n\(url.lastPathComponent)"
+        } catch {
+            errorMessage = "导出 PDF 失败：\(error.localizedDescription)"
+        }
+    }
+
+    func exportCSV() {
+        guard let result else {
+            errorMessage = "当前没有可以导出的定位结果。"
+            return
+        }
+        let panel = savePanel(
+            contentType: .commaSeparatedText,
+            defaultName: "\(exportBaseName(result)).csv"
+        )
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try ResultExporter.csvData(result: result).write(to: url, options: .atomic)
+            exportMessage = "已导出：\n\(url.lastPathComponent)"
+        } catch {
+            errorMessage = "导出 CSV 失败：\(error.localizedDescription)"
+        }
+    }
+
+    func copyConclusion() {
+        guard result != nil else {
+            errorMessage = "当前没有可以复制的结果。"
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(conclusionText, forType: .string)
+        exportMessage = "结论与指标已复制"
+    }
+
+    private func savePanel(
+        contentType: UTType,
+        defaultName: String
+    ) -> NSSavePanel {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [contentType]
+        panel.nameFieldStringValue = defaultName
+        panel.canCreateDirectories = true
+        if let savedPath = UserDefaults.standard.string(forKey: "resultExportDirectory"),
+           FileManager.default.fileExists(atPath: savedPath) {
+            panel.directoryURL = URL(
+                fileURLWithPath: savedPath,
+                isDirectory: true
+            )
+        }
+        return panel
+    }
+
+    private func exportBaseName(_ result: PositioningResult) -> String {
+        "\(Self.safeFileComponent(result.datasetKey))-\(Self.fileTimestamp())"
+    }
+
+    private func meters(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.2f m", value)
+    }
+
+    @discardableResult
+    func load(url: URL) -> Bool {
         do {
             let data = try Data(contentsOf: url)
             let decoded = try JSONDecoder().decode(PositioningResult.self, from: data)
             result = decoded
             loadedFileName = url.lastPathComponent
             playbackProgress = 1.0
+            selectedStepIndex = nil
+            isFocusMode = false
             errorMessage = nil
+            return true
         } catch {
             errorMessage = "无法读取 \(url.lastPathComponent)：\(error.localizedDescription)"
+            return false
         }
     }
 
-    private func importDataset(at selectedURL: URL, preserveConfiguration: Bool = false) {
+    func importDataset(at selectedURL: URL, preserveConfiguration: Bool = false) {
         do {
             let inspected = try DatasetValidator.inspect(selectedURL: selectedURL)
             importedDataset = inspected
@@ -711,7 +1085,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func refreshMagneticMaps(selecting preferredID: String? = nil) {
+    func refreshMagneticMaps(selecting preferredID: String? = nil) {
         do {
             magneticMaps = try GenericMagneticMapStore.loadAll()
             if let preferredID, magneticMaps.contains(where: { $0.id == preferredID }) {

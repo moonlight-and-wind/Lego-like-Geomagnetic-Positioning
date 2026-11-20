@@ -210,6 +210,40 @@ struct RunRecord: Identifiable, Hashable {
     }
 }
 
+struct RunSummary: Equatable, Sendable {
+    let pfFinalError: Double?
+    let stepsDetected: Int?
+    let datasetKey: String?
+
+    static func decode(_ data: Data) -> RunSummary? {
+        guard let wire = try? JSONDecoder().decode(
+            RunSummaryWire.self,
+            from: data
+        ) else { return nil }
+        return RunSummary(
+            pfFinalError: wire.pfErrorStats?.final,
+            stepsDetected: wire.stepsDetected,
+            datasetKey: wire.datasetKey
+        )
+    }
+}
+
+private struct RunSummaryWire: Decodable {
+    struct ErrorStats: Decodable {
+        let final: Double?
+    }
+
+    let pfErrorStats: ErrorStats?
+    let stepsDetected: Int?
+    let datasetKey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pfErrorStats = "pf_error_stats"
+        case stepsDetected = "steps_detected"
+        case datasetKey = "dataset_key"
+    }
+}
+
 enum DatasetImportError: LocalizedError {
     case noSensorFolder
     case multipleSensorFolders([String])

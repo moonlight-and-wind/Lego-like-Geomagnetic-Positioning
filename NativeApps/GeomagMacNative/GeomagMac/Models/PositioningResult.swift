@@ -349,6 +349,16 @@ extension PositioningResult {
         datasetKey.replacingOccurrences(of: "_", with: " ")
     }
 
+    var friendlyTitle: String {
+        let parts = datasetKey.split(separator: "_")
+        if parts.count == 3,
+           parts[0] == "route",
+           let index = Int(parts[2]) {
+            return "Route \(parts[1]) · 第 \(index) 次（留出）"
+        }
+        return datasetKey
+    }
+
     var finalPFConfidence: PFConfidenceSample? {
         pfConfidenceHistory?.last
     }
