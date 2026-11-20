@@ -160,6 +160,9 @@ struct ImportedDataset: Hashable {
     let suggestedInitialHeadingDegrees: Double?
     let suggestedMapURL: URL?
     let coordinateFrame: String?
+    /// 包内登记的 App 版本与受扰判据版本（App 2.6 起写入；更早的包为 nil）。
+    let appVersion: String?
+    let disturbCriterionVersion: Int?
     let spatialAnchors: [ImportedSpatialAnchor]
     let mappingPauseIntervals: [ClosedRange<Double>]
     /// 磁场受扰区间（disturb_start/disturb_end，App 2.4+ 写入）：人静止而场在变的时段。
@@ -315,7 +318,10 @@ enum DatasetValidator {
             .map(readMappingDisturbIntervals) ?? []
         var warnings: [String] = []
         if !mappingDisturbIntervals.isEmpty {
-            warnings.append("检测到 \(mappingDisturbIntervals.count) 段磁场受扰（人静止时场在变），已从建图排除。")
+            warnings.append(disturbIntervalWarning(
+                count: mappingDisturbIntervals.count,
+                criterionVersion: metadata?.disturbCriterionVersion
+            ))
         }
         if locationURL == nil {
             warnings.append("未找到 Location.csv；当前算法不依赖 GPS，可以继续运行。")
@@ -365,6 +371,8 @@ enum DatasetValidator {
             suggestedInitialHeadingDegrees: suggestedInitialHeading,
             suggestedMapURL: metadata?.mapURL(relativeTo: directoryURL),
             coordinateFrame: metadata?.coordinateFrame,
+            appVersion: metadata?.appVersion,
+            disturbCriterionVersion: metadata?.disturbCriterionVersion,
             spatialAnchors: spatialAnchors,
             mappingPauseIntervals: mappingPauseIntervals,
             mappingDisturbIntervals: mappingDisturbIntervals,
@@ -839,12 +847,16 @@ enum DatasetValidator {
         return nil
     }
 
-    private struct Metadata {
+    struct Metadata {
         let datasetName: String?
         let routeText: String?
         let initialHeadingDegrees: Double?
         let mapPath: String?
         let coordinateFrame: String?
+        /// App 2.6 起写入；更早的包没有。
+        let appVersion: String?
+        /// 受扰判据版本：2 = App 2.5 起的四项修复后口径；缺字段 = ≤2.5（2.4 区间偏宽）。
+        let disturbCriterionVersion: Int?
 
         func mapURL(relativeTo directoryURL: URL) -> URL? {
             guard let mapPath, !mapPath.isEmpty else { return nil }
@@ -856,7 +868,7 @@ enum DatasetValidator {
         }
     }
 
-    private static func readMetadata(_ url: URL) -> Metadata? {
+    static func readMetadata(_ url: URL) -> Metadata? {
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -878,7 +890,9 @@ enum DatasetValidator {
             routeText: routeText,
             initialHeadingDegrees: (object["initial_heading_deg"] as? NSNumber)?.doubleValue,
             mapPath: object["map_npz_path"] as? String,
-            coordinateFrame: (object["spatial_reference"] as? [String: Any])?["coordinate_frame"] as? String
+            coordinateFrame: (object["spatial_reference"] as? [String: Any])?["coordinate_frame"] as? String,
+            appVersion: object["app_version"] as? String,
+            disturbCriterionVersion: (object["disturb_criterion"] as? NSNumber)?.intValue
         )
     }
 
@@ -921,6 +935,14 @@ enum DatasetValidator {
 
     static func readMappingPauseIntervals(_ url: URL) -> [ClosedRange<Double>] {
         readMappingIntervals(url, opening: ["pause"], closing: ["resume", "recording_stop"])
+    }
+
+    /// 受扰区间提示。缺 `disturb_criterion` 的包来自 App ≤2.5，其中 2.4 的区间会明显偏宽
+    /// （磁铁样本超覆盖 46s），要提示用户别把多排除的路段当成数据坏了。
+    static func disturbIntervalWarning(count: Int, criterionVersion: Int?) -> String {
+        let base = "检测到 \(count) 段磁场受扰（人静止时场在变），已从建图排除。"
+        guard (criterionVersion ?? 1) < 2 else { return base }
+        return base + "该采集未登记判据版本（App 2.5 及更早），区间可能偏宽。"
     }
 
     /// 磁场受扰区间：disturb_start/disturb_end 成对（App 2.4 起写入 SpatialEvents.csv）。

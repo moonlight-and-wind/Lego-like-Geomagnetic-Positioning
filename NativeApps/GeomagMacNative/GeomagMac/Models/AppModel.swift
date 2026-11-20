@@ -502,6 +502,8 @@ final class AppModel: ObservableObject {
                     initialHeadingDegrees: initialHeading,
                     activeStartTime: interval.confidence == "低" ? nil : interval.startTime,
                     activeEndTime: interval.confidence == "低" ? nil : interval.endTime,
+                    excludedIntervals: importedDataset.mappingPauseIntervals
+                        + importedDataset.mappingDisturbIntervals,
                     settings: algorithmSettings,
                     progress: callback
                 )

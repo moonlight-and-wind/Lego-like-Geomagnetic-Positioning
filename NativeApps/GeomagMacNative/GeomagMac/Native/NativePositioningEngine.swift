@@ -23,6 +23,8 @@ enum NativePositioningEngine {
         case invalidMap
         case invalidReferenceRoute
         case insufficientMapSamples
+        case insufficientMapSamplesAfterExclusions(excludedSegments: Int, remainingCells: Int)
+        case insufficientStepsAfterExclusions(excludedSteps: Int)
         case mapSourceCannotLocateItself
         case localizationModeMismatch
         case initialHeadingRequired
@@ -36,6 +38,12 @@ enum NativePositioningEngine {
             case .invalidMap: "内置地磁地图格式不正确。"
             case .invalidReferenceRoute: "建立磁图至少需要两个不同的真实路线坐标点。"
             case .insufficientMapSamples: "参考采集没有产生足够的有效步级磁场样本。"
+            case let .insufficientMapSamplesAfterExclusions(excludedSegments, remainingCells):
+                "受扰或暂停区间排除了 \(excludedSegments) 段路线（相邻锚点之间），"
+                    + "剩余样本只形成 \(remainingCells) 个有效网格（至少需要 8 个）。请补采被排除的路段。"
+            case let .insufficientStepsAfterExclusions(excludedSteps):
+                "受扰或暂停区间排除了 \(excludedSteps) 个步级样本，剩余步态不足以建立路线磁图。"
+                    + "请补采被排除的路段。"
             case .mapSourceCannotLocateItself: "建图采集不能用于自我定位验证。"
             case .localizationModeMismatch: "定位模式与所选磁图类型不一致。"
             case .initialHeadingRequired: "房间自由定位必须提供已知初始航向，不能从真实路线推断。"
@@ -477,6 +485,7 @@ enum NativePositioningEngine {
         initialHeadingDegrees: Double?,
         activeStartTime: Double?,
         activeEndTime: Double?,
+        excludedIntervals: [ClosedRange<Double>] = [],
         settings: AlgorithmSettings = .optimized,
         progress: @Sendable (Double, String) -> Void
     ) throws -> GenericMagneticMapDocument {
@@ -495,8 +504,15 @@ enum NativePositioningEngine {
             ?? headingOfFirstSegment(route)
         progress(0.35, "提取步级磁场样本")
         let detection = detectSteps(frames: activeFrames, initialHeading: initialHeading, settings: settings)
-        let steps = detection.steps
-        guard steps.count >= 8 else { throw EngineError.insufficientMapSamples }
+        // 路线建图同样要按时间排除受扰/暂停段（此前只有锚点建图支持）。
+        let steps = detection.steps.filter { step in
+            !excludedIntervals.contains { $0.contains(step.time) }
+        }
+        let excludedStepCount = detection.steps.count - steps.count
+        let insufficientSamplesError: EngineError = excludedStepCount > 0
+            ? .insufficientStepsAfterExclusions(excludedSteps: excludedStepCount)
+            : .insufficientMapSamples
+        guard steps.count >= 8 else { throw insufficientSamplesError }
         let segmentHeadings = zip(route, route.dropFirst()).map {
             atan2($1.y - $0.y, $1.x - $0.x)
         }
@@ -523,10 +539,10 @@ enum NativePositioningEngine {
             }
         }
         guard Set(segmentedSteps.map(\.segment)).count == segmentHeadings.count else {
-            throw EngineError.insufficientMapSamples
+            throw insufficientSamplesError
         }
         let totalStepLength = segmentedSteps.map(\.step.length).reduce(0, +)
-        guard totalStepLength > 0 else { throw EngineError.insufficientMapSamples }
+        guard totalStepLength > 0 else { throw insufficientSamplesError }
         let rawLearnedStepScale = routeLength / totalStepLength
         // A short calibration loop contains too few strides to transfer its
         // amplitude-derived scale reliably to another walk. Shrink short-map
@@ -664,11 +680,15 @@ enum NativePositioningEngine {
         var buckets: [GridKey: [Observation]] = [:]
         var knownDistanceTotal = 0.0
         var rawStepDistanceTotal = 0.0
+        var excludedSegmentCount = 0
         progress(0.25, "按相邻锚点分配传感器位置")
         for (start, end) in zip(anchors, anchors.dropFirst()) where end.time > start.time {
             if excludedIntervals.contains(where: {
                 $0.lowerBound < end.time && start.time < $0.upperBound
-            }) { continue }
+            }) {
+                excludedSegmentCount += 1
+                continue
+            }
             let segmentFrames = frames.filter { start.time <= $0.time && $0.time <= end.time }
             guard !segmentFrames.isEmpty else { continue }
             let segmentSteps = steps.filter { start.time <= $0.time && $0.time <= end.time }
@@ -751,7 +771,16 @@ enum NativePositioningEngine {
             let cosine = accepted.map { cos($0.heading) }.reduce(0, +)
             samplesByKey[key]?.headingRadians = atan2(sine, cosine)
         }
-        guard samplesByKey.count >= 8 else { throw EngineError.insufficientMapSamples }
+        // 排除区间会把整条锚点腿拿掉：样本不足时要说清是排除造成的，
+        // 否则用户只会看到「参考采集没有产生足够的有效步级磁场样本」而反复重采。
+        guard samplesByKey.count >= 8 else {
+            throw excludedSegmentCount > 0
+                ? EngineError.insufficientMapSamplesAfterExclusions(
+                    excludedSegments: excludedSegmentCount,
+                    remainingCells: samplesByKey.count
+                )
+                : EngineError.insufficientMapSamples
+        }
         for (key, sample) in samplesByKey {
             var updated = sample
             if let left = samplesByKey[GridKey(x: key.x - 1, y: key.y)],

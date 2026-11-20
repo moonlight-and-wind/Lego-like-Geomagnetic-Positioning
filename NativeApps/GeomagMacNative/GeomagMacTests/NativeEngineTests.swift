@@ -30,6 +30,38 @@ final class NativeEngineTests: XCTestCase {
         XCTAssertEqual(DatasetValidator.readMappingPauseIntervals(url), [])
     }
 
+    func testDisturbWarningMarksLegacyCriterionAsPossiblyWide() {
+        XCTAssertEqual(
+            DatasetValidator.disturbIntervalWarning(count: 2, criterionVersion: 2),
+            "检测到 2 段磁场受扰（人静止时场在变），已从建图排除。"
+        )
+        // App ≤2.5 不写 disturb_criterion：其中 2.4 的区间会明显偏宽，必须提示。
+        let legacy = DatasetValidator.disturbIntervalWarning(count: 2, criterionVersion: nil)
+        XCTAssertTrue(legacy.contains("已从建图排除"))
+        XCTAssertTrue(legacy.contains("区间可能偏宽"))
+        XCTAssertTrue(DatasetValidator.disturbIntervalWarning(count: 1, criterionVersion: 1)
+            .contains("区间可能偏宽"))
+    }
+
+    func testMetadataVersionFieldsAreParsedForCriterionWarning() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try Data(#"{"dataset_key":"d","app_version":"2.6.0","disturb_criterion":2}"#.utf8)
+            .write(to: url)
+        let metadata = try XCTUnwrap(DatasetValidator.readMetadata(url))
+        XCTAssertEqual(metadata.appVersion, "2.6.0")
+        XCTAssertEqual(metadata.disturbCriterionVersion, 2)
+
+        try Data(#"{"dataset_key":"d"}"#.utf8).write(to: url)
+        let legacy = try XCTUnwrap(DatasetValidator.readMetadata(url))
+        XCTAssertNil(legacy.appVersion)
+        XCTAssertNil(legacy.disturbCriterionVersion)
+    }
+
+
     func testMergeRecordsLocalizedCrossSourceDivergence() throws {
         func document(source: String, norm: Double, shiftedCell: Int? = nil) throws -> GenericMagneticMapDocument {
             let samples = (0..<8).map { index -> GenericMagneticMapSample in
@@ -70,6 +102,42 @@ final class NativeEngineTests: XCTestCase {
         XCTAssertTrue(localized.qualityReport?.messages.contains {
             $0.contains("跨会话同格场强分歧")
         } ?? false)
+    }
+
+    func testSourceDivergenceCapsExcellentGradeAtUsable() throws {
+        // 满覆盖 4×4 网格：基准数据能给「优秀」（覆盖 100%、方差 1、每格 100 样本）。
+        func document(source: String, norm: Double, shiftedCell: Int? = nil) throws -> GenericMagneticMapDocument {
+            let samples = (0..<16).map { index -> GenericMagneticMapSample in
+                let value = index == shiftedCell ? norm + 30 : norm
+                return GenericMagneticMapSample(
+                    x: Double(index % 4) + 0.5, y: Double(index / 4) + 0.5,
+                    magneticNormUT: value,
+                    magneticXUT: value / 2, magneticYUT: value / 3, magneticZUT: value / 4,
+                    varianceUT2: 1, observationCount: 100, directionCount: 2, headingRadians: 0
+                )
+            }
+            return try GenericMagneticMapDocument(
+                schemaVersion: 1, id: "grade_cap_room", name: "Grade Cap Room",
+                createdAt: Date(), sourceDatasetKeys: [source],
+                referenceRoute: [XYPoint(x: 0.5, y: 0.5), XYPoint(x: 3.5, y: 3.5)],
+                samples: samples, supportRadiusM: 1,
+                coordinateFrame: "room-a", gridCellSizeM: 1, samplesFollowPath: false
+            ).validated()
+        }
+
+        let agreed = try GenericMagneticMapStore.merging(
+            try document(source: "a", norm: 50),
+            with: try document(source: "b", norm: 51)
+        )
+        XCTAssertEqual(agreed.qualityReport?.grade, MagneticMapQualityReport.Grade.excellent)
+
+        // 单格分歧：覆盖与噪声仍达标（1/16 噪声格 ≤ 10%），但等级封顶「可用」。
+        let divergent = try GenericMagneticMapStore.merging(
+            try document(source: "c", norm: 50),
+            with: try document(source: "d", norm: 50, shiftedCell: 3)
+        )
+        XCTAssertEqual(divergent.sourceDivergence?.divergentCellCount, 1)
+        XCTAssertEqual(divergent.qualityReport?.grade, MagneticMapQualityReport.Grade.good)
     }
 
     func testRepeatedMergesKeepDivergenceVisible() throws {
@@ -114,6 +182,8 @@ final class NativeEngineTests: XCTestCase {
         XCTAssertTrue(second.qualityReport?.messages.contains {
             $0.contains("跨会话同格场强分歧")
         } ?? false)
+        // 反复合并仍看得见分歧 → 等级也一直被压在「可用」，不会回到「优秀」。
+        XCTAssertEqual(second.qualityReport?.grade, MagneticMapQualityReport.Grade.good)
     }
 
     func testDisturbEventPairingKeepsEarliestStartAndSurvivesBackdatedClose() throws {
@@ -295,6 +365,74 @@ final class NativeEngineTests: XCTestCase {
         XCTAssertTrue(map.samples.allSatisfy { ($0.observationCount ?? 0) >= 4 })
         XCTAssertEqual(map.samplesFollowPath, false)
         XCTAssertEqual(map.localizationMode, .roomAreaKnownStart)
+    }
+
+    func testExcludedSegmentsAreNamedWhenAnchoredBuildFindsTooFewCells() throws {
+        let directory = try NativePositioningEngine.bundledDatasetURL(key: "route_13_2")
+        let inspection = try DatasetValidator.inspect(selectedURL: directory)
+        let anchors = [
+            ImportedSpatialAnchor(
+                time: inspection.overlapStart, label: "a", x: 0, y: 0,
+                headingDegrees: 0, deviceYawDegrees: 0
+            ),
+            ImportedSpatialAnchor(
+                time: inspection.overlapEnd, label: "b", x: 4, y: 1.5,
+                headingDegrees: 20, deviceYawDegrees: 20
+            ),
+        ]
+        // 整段采集都被排除 → 只剩 0 个有效网格；报错必须点名是被排除区间拿掉的。
+        XCTAssertThrowsError(try NativePositioningEngine.buildAnchoredGridMagneticMap(
+            name: "room_grid_excluded", datasetKey: "reference_a", datasetDirectory: directory,
+            coordinateFrame: "test-room", anchors: anchors,
+            excludedIntervals: [inspection.overlapStart...inspection.overlapEnd],
+            progress: { _, _ in }
+        )) { error in
+            guard case let .insufficientMapSamplesAfterExclusions(segments, cells)? =
+                    error as? NativePositioningEngine.EngineError else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            XCTAssertEqual(segments, 1)
+            XCTAssertEqual(cells, 0)
+            XCTAssertTrue(error.localizedDescription.contains("排除了 1 段路线"))
+        }
+    }
+
+    func testGenericRouteMapHonorsExcludedIntervals() throws {
+        let directory = try NativePositioningEngine.bundledDatasetURL(key: "route_13_2")
+        let inspection = try DatasetValidator.inspect(selectedURL: directory)
+        func build(_ excluded: [ClosedRange<Double>]) throws -> GenericMagneticMapDocument {
+            try NativePositioningEngine.buildGenericMagneticMap(
+                name: "route_map_exclusion",
+                datasetKey: "reference_a",
+                datasetDirectory: directory,
+                route: route(for: "route_13"),
+                initialHeadingDegrees: nil,
+                activeStartTime: nil,
+                activeEndTime: nil,
+                excludedIntervals: excluded,
+                progress: { _, _ in }
+            )
+        }
+
+        let base = try build([])
+        XCTAssertGreaterThan(base.samples.count, 20)
+
+        // 整段排除 → 所有步级样本被剔除，报错要点名是排除造成的。
+        XCTAssertThrowsError(try build([inspection.overlapStart...inspection.overlapEnd])) { error in
+            guard case let .insufficientStepsAfterExclusions(steps)? =
+                    error as? NativePositioningEngine.EngineError else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            XCTAssertGreaterThan(steps, 0)
+        }
+
+        // 只挖掉中间一段：地图仍能建立，但样本数必须变少。
+        // 不能挖开头——那会整段缺步态，触发的是「路段覆盖不全」而不是「少了一些样本」。
+        let middleStart = inspection.overlapStart + inspection.overlapDuration * 0.40
+        let middleEnd = inspection.overlapStart + inspection.overlapDuration * 0.43
+        let partial = try build([middleStart...middleEnd])
+        XCTAssertLessThan(partial.samples.count, base.samples.count)
+        XCTAssertGreaterThan(partial.samples.count, 0)
     }
 
     func testRoomAreaModeRequiresExplicitHeadingInsteadOfEvaluationRoute() throws {

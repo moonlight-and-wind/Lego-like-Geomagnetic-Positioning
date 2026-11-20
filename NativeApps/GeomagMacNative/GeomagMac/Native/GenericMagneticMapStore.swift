@@ -224,7 +224,7 @@ struct GenericMagneticMapDocument: Codable, Hashable, Identifiable, Sendable {
         let medianObservations = observationCounts.isEmpty
             ? 0 : observationCounts[observationCounts.count / 2]
         let weakRatio = Double(sparse + noisy) / Double(max(covered, 1))
-        let grade: MagneticMapQualityReport.Grade
+        var grade: MagneticMapQualityReport.Grade
         if coverage >= 0.80, weakRatio <= 0.10, medianObservations >= 20 {
             grade = .excellent
         } else if coverage >= 0.60, weakRatio <= 0.25, medianObservations >= 12 {
@@ -233,6 +233,12 @@ struct GenericMagneticMapDocument: Codable, Hashable, Identifiable, Sendable {
             grade = .needsMoreData
         } else {
             grade = .poor
+        }
+        // 已记录的跨会话分歧是「有证据表明不可信」：覆盖与噪声再好也不再给「优秀」，
+        // 否则徽章与复核提示互相矛盾。只封顶到「可用」——单格分歧可能只是物体临时移动，
+        // 图通常仍可用于定位，缺的是人复核而不是补采。
+        if grade == .excellent, sourceDivergence?.hasDivergence == true {
+            grade = .good
         }
         var messages: [String] = []
         if coverage < 0.60 {
