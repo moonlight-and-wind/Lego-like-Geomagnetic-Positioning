@@ -52,5 +52,8 @@ data/own_data/*.npz
 .env
 .env.local
 
+# HarmonyOS release signing credentials
+StoreSubmission/HarmonyOS/signing/
+
 # Jupyter
 .ipynb_checkpoints/
