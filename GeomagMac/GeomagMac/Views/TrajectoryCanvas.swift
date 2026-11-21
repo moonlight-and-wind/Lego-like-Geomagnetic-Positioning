@@ -5,6 +5,7 @@ struct TrajectoryCanvas: View {
     let showTrueRoute: Bool
     let showPDR: Bool
     let showPF: Bool
+    let showPFConfidence: Bool
     let playbackProgress: Double
 
     @State private var zoom = 1.0
@@ -47,6 +48,13 @@ struct TrajectoryCanvas: View {
                 }
 
                 if showPF {
+                    if showPFConfidence {
+                        drawPFConfidence(
+                            bounds: bounds,
+                            context: &context,
+                            size: size
+                        )
+                    }
                     draw(
                         points: visiblePrefix(result.pfTrack),
                         color: pfColor,
@@ -56,6 +64,11 @@ struct TrajectoryCanvas: View {
                             lineJoin: .round,
                             dash: [9, 6]
                         ),
+                        bounds: bounds,
+                        context: &context,
+                        size: size
+                    )
+                    drawRecoveryMarkers(
                         bounds: bounds,
                         context: &context,
                         size: size
@@ -170,6 +183,62 @@ struct TrajectoryCanvas: View {
         }
     }
 
+    private func drawPFConfidence(
+        bounds: PlotBounds,
+        context: inout GraphicsContext,
+        size: CGSize
+    ) {
+        guard let confidence = result.pfConfidenceHistory, !confidence.isEmpty else { return }
+        let points = visiblePrefix(result.pfTrack)
+        let count = min(points.count, confidence.count)
+        guard count > 0 else { return }
+        let stride = max(1, Int(ceil(Double(count) / 10.0)))
+        for index in 0..<count where index % stride == 0 || index == count - 1 {
+            let item = confidence[index]
+            let center = screenPoint(points[index], bounds: bounds, size: size)
+            let radius = min(max(item.radius95M * plotScale(bounds: bounds, size: size) * zoom, 3), 72)
+            let ellipse = Path(
+                ellipseIn: CGRect(
+                    x: center.x - radius,
+                    y: center.y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )
+            )
+            let color: Color = switch item.level.lowercased() {
+            case "high": .green
+            case "medium": .orange
+            default: .red
+            }
+            context.fill(ellipse, with: .color(color.opacity(0.035)))
+            context.stroke(ellipse, with: .color(color.opacity(0.24)), lineWidth: 1)
+        }
+    }
+
+    private func drawRecoveryMarkers(
+        bounds: PlotBounds,
+        context: inout GraphicsContext,
+        size: CGSize
+    ) {
+        guard let events = result.localizationRecoveryEvents else { return }
+        let visibleCount = visiblePrefix(result.pfTrack).count
+        for event in events where event.stepIndex < visibleCount {
+            guard result.pfTrack.indices.contains(event.stepIndex) else { continue }
+            let center = screenPoint(result.pfTrack[event.stepIndex], bounds: bounds, size: size)
+            let isReinitialize = event.action.hasPrefix("reinitialize")
+            let radius = isReinitialize ? 9.0 : 7.0
+            var marker = Path()
+            marker.move(to: CGPoint(x: center.x, y: center.y - radius))
+            marker.addLine(to: CGPoint(x: center.x + radius, y: center.y))
+            marker.addLine(to: CGPoint(x: center.x, y: center.y + radius))
+            marker.addLine(to: CGPoint(x: center.x - radius, y: center.y))
+            marker.closeSubpath()
+            let color: Color = isReinitialize ? .purple : .blue
+            context.fill(marker, with: .color(color.opacity(0.90)))
+            context.stroke(marker, with: .color(.white.opacity(0.90)), lineWidth: 1.4)
+        }
+    }
+
     private func drawGrid(context: inout GraphicsContext, size: CGSize) {
         var minor = Path()
         let columns = 12
@@ -188,10 +257,7 @@ struct TrajectoryCanvas: View {
     }
 
     private func screenPoint(_ point: XYPoint, bounds: PlotBounds, size: CGSize) -> CGPoint {
-        let padding = 34.0
-        let availableWidth = max(size.width - padding * 2, 1)
-        let availableHeight = max(size.height - padding * 2, 1)
-        let scale = min(availableWidth / bounds.width, availableHeight / bounds.height)
+        let scale = plotScale(bounds: bounds, size: size)
         let plotWidth = bounds.width * scale
         let plotHeight = bounds.height * scale
         let left = (size.width - plotWidth) / 2
@@ -205,6 +271,13 @@ struct TrajectoryCanvas: View {
             x: center.x + (base.x - center.x) * zoom + pan.width,
             y: center.y + (base.y - center.y) * zoom + pan.height
         )
+    }
+
+    private func plotScale(bounds: PlotBounds, size: CGSize) -> Double {
+        let padding = 34.0
+        let availableWidth = max(size.width - padding * 2, 1)
+        let availableHeight = max(size.height - padding * 2, 1)
+        return min(availableWidth / bounds.width, availableHeight / bounds.height)
     }
 }
 

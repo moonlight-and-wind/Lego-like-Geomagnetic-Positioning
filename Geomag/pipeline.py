@@ -5,7 +5,13 @@ from pathlib import Path
 
 import numpy as np
 
-from Geomag.algorithms import get_sensor, get_test_len, get_true_route, visualize
+from Geomag.algorithms import (
+    get_sensor,
+    get_sensor_diagnostics,
+    get_test_len,
+    get_true_route,
+    visualize,
+)
 from Geomag.blocks import (
     HEADING_REGISTRY,
     MAG_REGISTRY,
@@ -47,7 +53,14 @@ class PFModule:
     stages: Module
     state_kwargs: dict = field(default_factory=dict)
 
-    def step(self, pf_state, step_len: float, heading_angle: float, geomag_seq):
+    def step(
+        self,
+        pf_state,
+        step_len: float,
+        heading_angle: float,
+        geomag_seq,
+        measurement_valid: bool = True,
+    ):
         if getattr(pf_state, "map_points", None) is None:
             return pf_state.get_pos()
 
@@ -58,8 +71,11 @@ class PFModule:
             "geomag_seq": list(geomag_seq),
             "target_n": len(pf_state.particles),
             "should_resample": False,
+            "measurement_valid": bool(measurement_valid),
         }
         self.stages(ctx)
+        if "posterior_pos" in ctx:
+            return ctx["posterior_pos"]
         return pf_state.get_pos()
 
 
@@ -115,7 +131,26 @@ class UpdateStage(Module):
         self.weight = WEIGHT_REGISTRY.build(weight, **(weight_kwargs or {}))
 
     def forward(self, ctx):
+        if not bool(ctx.get("measurement_valid", True)):
+            pf_state = ctx["pf_state"]
+            pf_state.last_weight_diagnostics = {
+                "measurement_valid": False,
+                "measurement_rejected_reason": "magnetometer_invalid",
+                "ess_ratio": float(pf_state.effective_sample_size())
+                / max(float(len(pf_state.particles)), 1.0),
+                "information_score": 0.0,
+            }
+            ctx["posterior_pos"] = pf_state.get_pos()
+            ctx["posterior_uncertainty"] = pf_state.position_uncertainty()
+            pf_state.last_position_uncertainty = ctx["posterior_uncertainty"]
+            return ctx
         self.weight.forward(ctx["pf_state"], geomag_seq=ctx["geomag_seq"])
+        # The current state estimate belongs to the weighted posterior.
+        # Resampling only prepares particles for the next step; global
+        # diversity injections must not directly shift the current output.
+        ctx["posterior_pos"] = ctx["pf_state"].get_pos()
+        ctx["posterior_uncertainty"] = ctx["pf_state"].position_uncertainty()
+        ctx["pf_state"].last_position_uncertainty = ctx["posterior_uncertainty"]
         return ctx
 
 
@@ -284,6 +319,7 @@ class GeomagPipeline:
                         "fixed_threshold": 10.7,
                         "zero_crossing_band": 0.22,
                         "min_samples_per_step": 4,
+                        "min_step_interval_s": 0.0,
                         "freq_ratio_threshold": 3.0,
                         "autocorr_threshold": 0.35,
                     },
@@ -309,6 +345,7 @@ class GeomagPipeline:
                     "weight_sigma": 8.0,
                     "min_particles": 100,
                     "max_particles": 100000000,
+                    "init_position_std": 0.8,
                 },
             },
         }
@@ -357,7 +394,7 @@ class GeomagPipeline:
         return latlon_to_xy(arr[:, 0], arr[:, 1], origin_lat, origin_lon)
 
     @staticmethod
-    def _compute_error_series(track_xy, route_x, route_y):
+    def _compute_error_series(track_xy, route_x, route_y, progress=None):
         arr = np.asarray(track_xy, dtype=float)
         if arr.ndim != 2 or arr.shape[1] < 2:
             return None
@@ -368,11 +405,26 @@ class GeomagPipeline:
         ry = np.asarray(route_y, dtype=float)
         if px.size == 0 or rx.size == 0 or ry.size == 0:
             return None
+        if rx.size != ry.size:
+            raise ValueError("route_x and route_y must have the same length")
 
-        route_idx = np.linspace(0, rx.size - 1, num=px.size)
-        route_idx = np.clip(np.rint(route_idx).astype(int), 0, rx.size - 1)
-        ref_x = rx[route_idx]
-        ref_y = ry[route_idx]
+        route_distance = np.concatenate(
+            [[0.0], np.cumsum(np.hypot(np.diff(rx), np.diff(ry)))]
+        )
+        total_distance = float(route_distance[-1])
+        if total_distance <= 1e-12:
+            ref_x = np.full(px.size, rx[0], dtype=float)
+            ref_y = np.full(py.size, ry[0], dtype=float)
+            return np.sqrt((px - ref_x) ** 2 + (py - ref_y) ** 2)
+        if progress is None:
+            route_pos = np.linspace(0.0, total_distance, num=px.size)
+        else:
+            progress_arr = np.asarray(progress, dtype=float).reshape(-1)
+            if progress_arr.size != px.size:
+                raise ValueError("progress must have the same length as track_xy")
+            route_pos = np.clip(progress_arr, 0.0, 1.0) * total_distance
+        ref_x = np.interp(route_pos, route_distance, rx)
+        ref_y = np.interp(route_pos, route_distance, ry)
         return np.sqrt((px - ref_x) ** 2 + (py - ref_y) ** 2)
 
     @staticmethod
@@ -390,6 +442,34 @@ class GeomagPipeline:
         }
 
     @staticmethod
+    def _compute_cross_track_error_series(track_xy, route_x, route_y):
+        """Distance from each estimate to the nearest point on the route polyline."""
+        track = np.asarray(track_xy, dtype=float)
+        route = np.column_stack(
+            [np.asarray(route_x, dtype=float), np.asarray(route_y, dtype=float)]
+        )
+        if track.ndim != 2 or track.shape[1] < 2 or route.shape[0] == 0:
+            return None
+        if route.shape[0] == 1:
+            return np.linalg.norm(track[:, :2] - route[0, :2], axis=1)
+
+        start = route[:-1, :2]
+        segment = route[1:, :2] - start
+        length2 = np.sum(segment * segment, axis=1)
+        errors = np.empty(track.shape[0], dtype=float)
+        for i, point in enumerate(track[:, :2]):
+            rel = point - start
+            t = np.divide(
+                np.sum(rel * segment, axis=1),
+                length2,
+                out=np.zeros_like(length2),
+                where=length2 > 1e-12,
+            )
+            projection = start + np.clip(t, 0.0, 1.0)[:, None] * segment
+            errors[i] = float(np.min(np.linalg.norm(projection - point, axis=1)))
+        return errors
+
+    @staticmethod
     def _print_error_summary(name, stats):
         if not stats:
             return
@@ -399,7 +479,7 @@ class GeomagPipeline:
             f"p95={stats['p95']:.3f}, final={stats['final']:.3f}"
         )
 
-    def run(self, show=True, output_png=None, max_frames=None):
+    def run(self, show=True, output_png=None, max_frames=None, write_outputs=True):
         geomag_map = self.context.geomag_map
         own_dataset_key = getattr(self.context, "own_dataset_key", None)
         route = get_true_route(
@@ -420,22 +500,29 @@ class GeomagPipeline:
         pos_list = [pf_state.get_pos()]
         pdr_list = [pf_state.get_pos()]
         particle_counts = [len(pf_state.particles)]
+        track_progress = [0.0]
         geomag_list = []
         sample_buffer = []
 
-        test_len = get_test_len(
+        full_test_len = get_test_len(
             source=self.context.sensor_source,
             data_root=self.context.data_root,
             uji_test_file=self.context.uji_test_file,
             own_data_dir=self.context.own_data_dir,
             own_dataset_key=own_dataset_key,
         )
+        test_len = int(full_test_len)
         if max_frames is not None:
-            test_len = min(int(max_frames), int(test_len))
+            if int(max_frames) <= 0:
+                raise ValueError("max_frames must be positive or None.")
+            test_len = min(int(max_frames), test_len)
 
         def _print_progress(current, total, width=36):
             total = max(int(total), 1)
             current = min(max(int(current), 0), total)
+            update_every = max(1, int(math.ceil(total / 20.0)))
+            if current not in {0, total} and current % update_every != 0:
+                return
             ratio = current / total
             filled = int(width * ratio)
             bar = "#" * filled + "-" * (width - filled)
@@ -451,14 +538,23 @@ class GeomagPipeline:
                 own_data_dir=self.context.own_data_dir,
                 own_dataset_key=own_dataset_key,
             )
-            sample_buffer.append([acc, gyro, mag])
+            sensor_time = get_sensor_diagnostics().get("time")
+            frame_sample = [acc, gyro, mag, sensor_time]
+            sample_buffer.append(frame_sample)
+            continuous_heading = None
+            if str(self.context.sensor_source).lower() == "own":
+                continuous_heading = self.pdr_module.estimate_heading([frame_sample])
 
             if not self.pdr_module.detect_step(sample_buffer):
                 _print_progress(i + 1, test_len)
                 continue
 
             step_len = self.pdr_module.estimate_step_len(sample_buffer)
-            heading_angle = self.pdr_module.estimate_heading(sample_buffer)
+            heading_angle = (
+                continuous_heading
+                if continuous_heading is not None
+                else self.pdr_module.estimate_heading(sample_buffer)
+            )
             geomag_value = self.pdr_module.extract_mag()
             geomag_list.append(geomag_value)
             geomag_window = geomag_list[-self.context.window_size :]
@@ -478,6 +574,7 @@ class GeomagPipeline:
             )
             pos_list.append(pos)
             particle_counts.append(len(pf_state.particles))
+            track_progress.append(float(i + 1) / max(float(full_test_len), 1.0))
             sample_buffer.clear()
             _print_progress(i + 1, test_len)
 
@@ -492,30 +589,54 @@ class GeomagPipeline:
         if route_x is None or route_y is None:
             print("PDR error: skipped (missing map origin to convert route lat/lon into XY meters).")
         else:
-            pdr_error_series = self._compute_error_series(pdr_list, route_x, route_y)
-            pf_error_series = self._compute_error_series(pos_list, route_x, route_y)
+            pdr_error_series = self._compute_error_series(
+                pdr_list, route_x, route_y, progress=track_progress
+            )
+            pf_error_series = self._compute_error_series(
+                pos_list, route_x, route_y, progress=track_progress
+            )
             pdr_error_stats = self._summarize_error(pdr_error_series)
             pf_error_stats = self._summarize_error(pf_error_series)
             self._print_error_summary("PDR", pdr_error_stats)
             self._print_error_summary("PF ", pf_error_stats)
 
-        saved = visualize(
-            pos_list=pos_list,
-            pdr_list=pdr_list,
-            route=route,
-            error_series=pf_error_series,
-            pdr_error_series=pdr_error_series,
-            particle_counts=particle_counts,
-            geomag_map=geomag_map,
-            mode="ujimap",
-            show=show,
-            output_png=output_png,
+        saved = (
+            visualize(
+                pos_list=pos_list,
+                pdr_list=pdr_list,
+                route=route,
+                error_series=pf_error_series,
+                pdr_error_series=pdr_error_series,
+                particle_counts=particle_counts,
+                geomag_map=geomag_map,
+                mode="ujimap",
+                show=show,
+                output_png=output_png,
+            )
+            if show or output_png or write_outputs
+            else None
+        )
+        route_xy_m = (
+            None
+            if route_x is None or route_y is None
+            else np.column_stack([route_x, route_y]).astype(float).tolist()
         )
         return {
             "pos_list": pos_list,
             "pdr_list": pdr_list,
+            "pf_track": [list(map(float, xy)) for xy in pos_list],
+            "pdr_track": [list(map(float, xy)) for xy in pdr_list],
             "particle_counts": particle_counts,
+            "track_progress": track_progress,
             "route": route,
+            "route_xy_m": route_xy_m,
+            "full_sensor_frames": int(full_test_len),
+            "sensor_frames_used": int(test_len),
+            "evaluation_scope": (
+                "full_capture"
+                if int(test_len) == int(full_test_len)
+                else "active_capture_segment"
+            ),
             "output_png": saved,
             "pdr_error_series": pdr_error_series.tolist() if pdr_error_series is not None else None,
             "pf_error_series": pf_error_series.tolist() if pf_error_series is not None else None,

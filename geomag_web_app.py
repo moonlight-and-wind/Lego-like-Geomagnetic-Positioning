@@ -66,6 +66,7 @@ from bokeh.models import (
 from bokeh.plotting import figure
 
 logger = logging.getLogger(__name__)
+_SIMULATION_LOCK = threading.Lock()
 
 try:
     from Geomag.branching import (
@@ -118,6 +119,12 @@ def run_simulation(params: dict) -> dict | None:
     own_profile = params.get("own_profile") or own_defaults.get("own_profile", "package")
     own_dataset_key = params.get("own_dataset_key") or own_defaults.get("own_dataset_key", own_sel)
     own_data_dir = params.get("own_data_dir") or own_defaults.get("own_data_dir", "")
+    uji_sel = params.get("uji", "").strip()
+    uji_defaults = (
+        resolve_uji_selection(uji_sel)
+        if resolve_uji_selection
+        else {"uji_test_file": "tt02.txt", "uji_data_root": "data/raw"}
+    )
 
     cfg = BranchConfig(
         branch=params.get("branch"),
@@ -126,8 +133,11 @@ def run_simulation(params: dict) -> dict | None:
         show=False,
         output_json=None,
         output_png=None,
-        uji_test_file=params.get("uji_test_file"),
-        uji_data_root=params.get("uji_data_root"),
+        write_outputs=False,
+        uji_test_file=params.get("uji_test_file")
+        or uji_defaults["uji_test_file"],
+        uji_data_root=params.get("uji_data_root")
+        or uji_defaults["uji_data_root"],
         own_profile=own_profile,
         own_dataset_key=own_dataset_key,
         own_data_dir=own_data_dir,
@@ -141,13 +151,26 @@ def run_simulation(params: dict) -> dict | None:
         own_use_route_initial_heading=not params.get("no_route_initial_heading"),
         own_mirror_y=params.get("mirror_y"),
         own_heading_offset_deg=params.get("own_heading_offset_deg"),
+        own_gyro_rate_scale=params.get("own_gyro_rate_scale", 1.0),
         own_trim_head=params.get("own_trim_head"),
         own_trim_tail=params.get("own_trim_tail"),
+        own_pf_smoothing_alpha=params.get("own_pf_smoothing_alpha", 0.3),
+        own_heading_snap_deg=params.get("own_heading_snap_deg", 0.0),
+        own_step_length_scale=params.get("own_step_length_scale", 1.0),
     )
     try:
-        return run_branch_simulation(cfg)
+        # The procedural sensor/heading backend keeps module-level stream
+        # state. Serialize web runs until that state is moved into RunContext.
+        with _SIMULATION_LOCK:
+            return run_branch_simulation(cfg)
     except FileNotFoundError as e:
-        return {"error": str(e), "hint": "数据集不存在。route2_run2 请用 own='own_branch' + profile='own_branch'"}
+        return {
+            "error": str(e),
+            "hint": (
+                "数据集不存在。默认有效采集为 route1_run2 和 "
+                "route2_run2；route2_run1 可显式运行。"
+            ),
+        }
     except Exception as e:
         logger.exception("Simulation failed.")
         return {"error": str(e)}
@@ -290,6 +313,32 @@ class GeoMagApp:
             step=1,
             value=0,
         )
+        self.pf_smoothing = Slider(
+            title="PF EMA 平滑系数 (own_pf_smoothing_alpha)",
+            start=0.0,
+            end=0.95,
+            step=0.05,
+            value=0.3,
+        )
+        self.heading_snap = Select(
+            title="正交路线约束 (own_heading_snap_deg)",
+            value="0",
+            options=[("0", "关闭（实际通用模式）"), ("90", "90° 砖缝测试")],
+        )
+        self.step_length_scale = Slider(
+            title="独立标定步长尺度 (own_step_length_scale)",
+            start=0.5,
+            end=1.8,
+            step=0.01,
+            value=1.0,
+        )
+        self.gyro_rate_scale = Slider(
+            title="独立标定陀螺仪比例 (own_gyro_rate_scale)",
+            start=0.8,
+            end=1.2,
+            step=0.001,
+            value=1.0,
+        )
 
         # Placeholder for file uploads
         self.file_input = FileInput(
@@ -305,6 +354,7 @@ class GeoMagApp:
         self.step_button.on_click(self._on_step)
         # Data and state
         self.pf_source = ColumnDataSource(data={"x": [], "y": []})
+        self.pf_raw_source = ColumnDataSource(data={"x": [], "y": []})
         self.pdr_source = ColumnDataSource(data={"x": [], "y": []})
         self.route_source = ColumnDataSource(data={"x": [], "y": []})
         self.full_result: dict | None = None
@@ -321,6 +371,7 @@ class GeoMagApp:
         )
         self.plot.line("x", "y", source=self.route_source, line_width=2, color="#34c759", legend_label="真值路线")
         self.plot.line("x", "y", source=self.pdr_source, line_width=1.5, color="#ff9500", line_dash="dashed", legend_label="PDR")
+        self.plot.line("x", "y", source=self.pf_raw_source, line_width=1.2, color="#ff2dce", legend_label="PF 原始")
         self.plot.line("x", "y", source=self.pf_source, line_width=2, color="#007aff", legend_label="PF")
         self.plot.legend.location = "top_left"
 
@@ -335,6 +386,7 @@ class GeoMagApp:
                          text-transform:uppercase;letter-spacing:0.5px;">定位轨迹</span>
             <span style="font-size:11px;font-weight:500;color:#34c759;">● 真值路线</span>
             <span style="font-size:11px;font-weight:500;color:#ff9500;">● PDR</span>
+            <span style="font-size:11px;font-weight:500;color:#ff2dce;">● PF 原始</span>
             <span style="font-size:11px;font-weight:500;color:#007aff;">● PF</span>
         </div>
         """)
@@ -383,9 +435,13 @@ font-family:-apple-system,BlinkMacSystemFont,sans-serif;">{header_text}</div>')
                 self.no_route_initial_heading,
                 self.mirror_y,
                 self.heading_offset,
+                self.gyro_rate_scale,
             ),
             _card("地图与裁剪",
                 self.own_map_mode,
+                self.pf_smoothing,
+                self.heading_snap,
+                self.step_length_scale,
                 self.trim_head,
                 self.trim_tail,
             ),
@@ -444,8 +500,12 @@ font-family:-apple-system,BlinkMacSystemFont,sans-serif;">{header_text}</div>')
             "no_route_initial_heading": (self.no_route_initial_heading.value == "True"),
             "mirror_y": (self.mirror_y.value == "True"),
             "own_heading_offset_deg": float(self.heading_offset.value),
+            "own_gyro_rate_scale": float(self.gyro_rate_scale.value),
             "own_trim_head": int(self.trim_head.value),
             "own_trim_tail": int(self.trim_tail.value),
+            "own_pf_smoothing_alpha": float(self.pf_smoothing.value),
+            "own_heading_snap_deg": float(self.heading_snap.value),
+            "own_step_length_scale": float(self.step_length_scale.value),
         }
         return params
 
@@ -484,7 +544,7 @@ font-family:-apple-system,BlinkMacSystemFont,sans-serif;">{header_text}</div>')
 
         def _check_done():
             if thread.is_alive():
-                curdoc().add_next_tick_callback(_check_done)
+                curdoc().add_timeout_callback(_check_done, 100)
                 return
             # Thread finished — populate results
             self.progress_div.visible = False
@@ -503,21 +563,28 @@ font-family:-apple-system,BlinkMacSystemFont,sans-serif;">{header_text}</div>')
             route = np.asarray(result.get("route_xy_m", []), dtype=float)
             pdr = np.asarray(result.get("pdr_track", []), dtype=float)
             pf = np.asarray(result.get("pf_track", []), dtype=float)
+            pf_raw = np.asarray(result.get("pf_raw_track", pf), dtype=float)
             if route.ndim == 2 and route.shape[1] >= 2:
                 self.route_source.data = {"x": route[:, 0], "y": route[:, 1]}
             if pdr.ndim == 2 and pdr.shape[1] >= 2:
                 self.pdr_source.data = {"x": pdr[:, 0], "y": pdr[:, 1]}
             if pf.ndim == 2 and pf.shape[1] >= 2:
                 self.pf_source.data = {"x": pf[:1, 0], "y": pf[:1, 1]}
+                if pf_raw.ndim == 2 and pf_raw.shape[1] >= 2:
+                    self.pf_raw_source.data = {
+                        "x": pf_raw[:1, 0],
+                        "y": pf_raw[:1, 1],
+                    }
                 self.current_index = 1
                 self.step_button.disabled = False
             else:
                 self.pf_source.data = {"x": [], "y": []}
+                self.pf_raw_source.data = {"x": [], "y": []}
                 self.step_button.disabled = True
 
-            if "pf_error_stats" in result:
-                ps = result["pf_error_stats"]
-                ds = result["pdr_error_stats"]
+            ps = result.get("pf_error_stats")
+            ds = result.get("pdr_error_stats")
+            if ps and ds:
                 steps = result.get("steps_detected", 0)
                 self.stats_div.text = f"""
                 <div style="display:flex;align-items:center;gap:14px;
@@ -548,11 +615,17 @@ font-family:-apple-system,BlinkMacSystemFont,sans-serif;">{header_text}</div>')
         if self.full_result is None:
             return
         pf = np.asarray(self.full_result.get("pf_track", []), dtype=float)
+        pf_raw = np.asarray(self.full_result.get("pf_raw_track", pf), dtype=float)
         if pf.ndim != 2 or self.current_index >= pf.shape[0]:
             self.step_button.disabled = True
             return
         idx = self.current_index + 1
         self.pf_source.data = {"x": pf[:idx, 0], "y": pf[:idx, 1]}
+        if pf_raw.ndim == 2 and pf_raw.shape[1] >= 2:
+            self.pf_raw_source.data = {
+                "x": pf_raw[:idx, 0],
+                "y": pf_raw[:idx, 1],
+            }
         self.current_index = idx
 
 

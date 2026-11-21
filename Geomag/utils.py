@@ -1,6 +1,6 @@
 import logging
 
-from Geomag.algorithms import get_map, get_sensor, get_test_len
+from Geomag.algorithms import get_map, get_sensor, get_sensor_diagnostics, get_test_len
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +9,7 @@ def collect_sensor_stream(source, **kwargs):
     """Read the full sensor stream for one test run.
 
     Returns a dict with aligned arrays/lists:
-    - t: sample index axis
+    - t: sensor timestamp when available, otherwise the sample index
     - acc: accelerometer [x, y, z]
     - gyro: gyroscope [x, y, z]
     - mag: magnetometer [x, y, z]
@@ -24,7 +24,8 @@ def collect_sensor_stream(source, **kwargs):
         mag.append(m)
         acc.append(a)
         gyro.append(g)
-        t.append(i)
+        sensor_time = get_sensor_diagnostics().get("time")
+        t.append(i if sensor_time is None else float(sensor_time))
     return {
         "t": t,
         "acc": acc,

@@ -378,10 +378,16 @@ def _render_ujimap(
             rx2, ry2, _ = _to_xy_route(route, origin_lat=origin_lat, origin_lon=origin_lon)
             if rx2.size == 0 or tx.size == 0:
                 return np.asarray([], dtype=float)
-            route_idx2 = np.linspace(0, rx2.size - 1, num=tx.size)
-            route_idx2 = np.clip(np.rint(route_idx2).astype(int), 0, rx2.size - 1)
-            ref_x2 = rx2[route_idx2]
-            ref_y2 = ry2[route_idx2]
+            route_distance = np.concatenate(
+                [[0.0], np.cumsum(np.hypot(np.diff(rx2), np.diff(ry2)))]
+            )
+            if route_distance[-1] <= 1e-12:
+                ref_x2 = np.full(tx.size, rx2[0], dtype=float)
+                ref_y2 = np.full(ty.size, ry2[0], dtype=float)
+            else:
+                query = np.linspace(0.0, route_distance[-1], num=tx.size)
+                ref_x2 = np.interp(query, route_distance, rx2)
+                ref_y2 = np.interp(query, route_distance, ry2)
             return np.sqrt((tx - ref_x2) ** 2 + (ty - ref_y2) ** 2)
 
         pf_err = None
@@ -514,11 +520,13 @@ def _render_usermap(geomag_map, vis_resolution, meta, show, output_png):
     cbar = fig.colorbar(contour, ax=ax)
     cbar.set_label("Magnetic Magnitude")
     fig.tight_layout()
+    saved_path = None
     if output_png:
         out = Path(output_png)
         out.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out, bbox_inches="tight")
+        saved_path = str(out)
     if show:
         plt.show()
     plt.close(fig)
-    return None
+    return saved_path

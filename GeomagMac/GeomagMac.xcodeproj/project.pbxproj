@@ -18,6 +18,8 @@
 		A10000000000000000000009 /* v7_final_route2_run2.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* v7_final_route2_run2.json */; };
 		A1000000000000000000000A /* GeomagBackend in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* GeomagBackend */; };
 		A1000000000000000000000B /* AlgorithmSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* AlgorithmSettings.swift */; };
+		A1000000000000000000000C /* ResultExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* ResultExporter.swift */; };
+		A1000000000000000000000D /* DatasetImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* DatasetImport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +35,8 @@
 		A2000000000000000000000A /* GeomagMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeomagMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000000B /* GeomagBackend */ = {isa = PBXFileReference; explicitFileType = folder; name = GeomagBackend; path = BackendDist/GeomagBackend; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000000C /* AlgorithmSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlgorithmSettings.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* ResultExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultExporter.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* DatasetImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetImport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +77,8 @@
 				A20000000000000000000003 /* PositioningResult.swift */,
 				A20000000000000000000004 /* AppModel.swift */,
 				A2000000000000000000000C /* AlgorithmSettings.swift */,
+				A2000000000000000000000D /* ResultExporter.swift */,
+				A2000000000000000000000E /* DatasetImport.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -191,6 +197,8 @@
 				A10000000000000000000005 /* MetricCard.swift in Sources */,
 				A10000000000000000000006 /* TrajectoryCanvas.swift in Sources */,
 				A1000000000000000000000B /* AlgorithmSettings.swift in Sources */,
+				A1000000000000000000000C /* ResultExporter.swift in Sources */,
+				A1000000000000000000000D /* DatasetImport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

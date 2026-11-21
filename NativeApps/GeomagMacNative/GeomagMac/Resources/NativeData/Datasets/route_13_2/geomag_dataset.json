@@ -1,0 +1,26 @@
+{
+  "created_at" : "2026-08-06T09:33:08.804Z",
+  "dataset_key" : "route_13_2",
+  "device_pose" : "face_up_front_forward",
+  "format_version" : 1,
+  "initial_heading_deg" : 90,
+  "route_xy_m" : [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      180
+    ],
+    [
+      180,
+      180
+    ],
+    [
+      180,
+      0
+    ]
+  ],
+  "timestamp_mode" : "seconds_since_capture_start"
+}

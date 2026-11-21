@@ -1,4 +1,4 @@
-"""Benchmark: test PF configs on the SAME dataset (route1_run1 via package profile)."""
+"""Benchmark PF configs on the valid route1_run2 package capture."""
 import json
 import time
 from pathlib import Path
@@ -28,7 +28,7 @@ def mk_pf(sigma, accum_mode, alpha, resample, boundary, heading_noise=0.08, step
     )
 
 
-# All configs use SAME dataset (route1_run1 via package profile)
+# All configs use the same valid dataset so the comparison remains controlled.
 CONFIGS = [
     # ── Baselines ──
     ("A_baseline_multiply_kill_cso",
@@ -66,8 +66,8 @@ def main():
 
         cfg = BranchConfig(branch="own",
                           own_profile="package",
-                          own_dataset_key="route1_run1",
-                          own_data_dir="data/own_data_package/route1_run1",
+                          own_dataset_key="route1_run2",
+                          own_data_dir="data/own_data_package/route1_run2",
                           show=False)
 
         import Geomag.branching as br

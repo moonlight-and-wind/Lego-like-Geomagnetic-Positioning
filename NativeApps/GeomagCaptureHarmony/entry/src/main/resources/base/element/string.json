@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "地磁与惯性传感器采集工具"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "采集地磁、加速度、陀螺仪与空间锚点"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Geomag Capture"
+    }
+  ]
+}

@@ -1,5 +1,23 @@
 {
-  "format_version": "1.0",
+  "format_version": "2.0",
+  "default_evaluation_datasets": [
+    "route1_run2",
+    "route2_run2"
+  ],
+  "capture_protocol": {
+    "metadata_schema": "capture_metadata.schema.json",
+    "metadata_template": "capture_metadata.template.json",
+    "device_pose": "face_up_front_forward",
+    "stationary_window_s": 3.0,
+    "start_stationary_required": true,
+    "end_stationary_required": true,
+    "finish_behavior": "stationary_until_recording_stops",
+    "turn_event_annotation_required": false,
+    "turn_event_annotation_recommended": true,
+    "default_controlled_alignment": "active_walk_uniform_speed",
+    "route_constraint": "none_for_general_use",
+    "controlled_test_hint": "Tile-seam straight lines and 90-degree turns are only a validation mode."
+  },
   "map": {
     "tile_count_x": 12,
     "tile_count_y": 8,
@@ -13,19 +31,82 @@
   },
   "datasets": {
     "route1_run1": {
+      "folder_name": "route1_run1",
       "route_label": "route1",
+      "route_key": "route1_tile_vertices",
       "source_zip": "Geomagnetic Navigation 2026-03-12 21-12-10.zip",
-      "assignment_confidence": "medium"
+      "assignment_confidence": "medium",
+      "evaluation_tier": "excluded",
+      "evaluation_enabled": false,
+      "data_issue": "sensor capture does not match the registered route",
+      "capture_metadata": {
+        "recording_status": "legacy_unannotated",
+        "device_pose": "face_up_front_forward",
+        "walking_speed_profile": "approximately_constant",
+        "finish_behavior": "stationary_until_recording_stops",
+        "turn_events": []
+      }
     },
     "route2_run1": {
+      "folder_name": "route2_run1",
       "route_label": "route2",
+      "route_key": "route2_tile_vertices",
       "source_zip": "Geomagnetic Navigation 2026-03-19 20-03-26.zip",
-      "assignment_confidence": "high"
+      "assignment_confidence": "high",
+      "evaluation_tier": "confirmed",
+      "evaluation_enabled": true,
+      "evaluation_role": "secondary_repeat",
+      "data_issue": null,
+      "capture_metadata": {
+        "recording_status": "legacy_unannotated",
+        "device_pose": "face_up_front_forward",
+        "walking_speed_profile": "approximately_constant",
+        "finish_behavior": "stationary_until_recording_stops",
+        "turn_events": []
+      }
+    },
+    "route2_run2": {
+      "dataset_path": "../own_data/Geomagnetic Navigation 2026-03-19 20-10-45",
+      "route_label": "route2",
+      "route_key": "route2_tile_vertices",
+      "source_zip": null,
+      "historical_alias": "own_branch",
+      "assignment_confidence": "high",
+      "evaluation_tier": "confirmed",
+      "evaluation_enabled": true,
+      "evaluation_role": "primary",
+      "data_issue": null,
+      "route_confirmation": {
+        "status": "operator_confirmed",
+        "confirmed_same_route_as": "route2_run1",
+        "independent_capture": true,
+        "confirmed_at": "2026-07-30"
+      },
+      "capture_metadata": {
+        "recording_status": "legacy_unannotated",
+        "device_pose": "face_up_front_forward",
+        "walking_speed_profile": "approximately_constant",
+        "finish_behavior": "stationary_until_recording_stops",
+        "turn_events": []
+      }
     },
     "route1_run2": {
+      "folder_name": "route1_run2",
       "route_label": "route1",
+      "route_key": "route1_tile_vertices",
       "source_zip": "Geomagnetic Navigation 2026-03-19 20-04-39.zip",
-      "assignment_confidence": "high"
+      "assignment_confidence": "high",
+      "evaluation_tier": "confirmed",
+      "evaluation_enabled": true,
+      "evaluation_role": "primary",
+      "data_issue": null,
+      "capture_metadata": {
+        "recording_status": "legacy_unannotated",
+        "device_pose": "face_up_front_forward",
+        "walking_speed_profile": "approximately_constant",
+        "finish_behavior": "stationary_until_recording_stops",
+        "turn_events": []
+      }
     }
   },
   "routes": {
@@ -65,5 +146,37 @@
         5
       ]
     ]
+  },
+  "map_profiles": {
+    "survey_kriging": {
+      "description": "Kriging grid reconstructed from eight parallel magnetometer survey lines.",
+      "source": "../own_data/my_mag_map.npz",
+      "bounds_xy_m": [
+        0.0,
+        6.72,
+        0.0,
+        8.074005934718102
+      ],
+      "nominal_resolution_m": 0.02,
+      "status": "measured_survey_geometry"
+    },
+    "tile_manifest": {
+      "description": "Twelve-by-eight tile interpretation used by the normalized route registry.",
+      "tile_count_xy": [
+        12,
+        8
+      ],
+      "tile_size_xy_m": [
+        0.96,
+        1.1
+      ],
+      "bounds_xy_m": [
+        0.0,
+        11.52,
+        0.0,
+        8.8
+      ],
+      "status": "route_coordinate_geometry"
+    }
   }
 }

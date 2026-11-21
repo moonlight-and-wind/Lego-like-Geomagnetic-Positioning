@@ -46,6 +46,20 @@ dev = [
 [project.scripts]
 geomag = "main:main"
 geomag-web = "geomag_web_app:main"
+geomag-data-audit = "Geomag.data_quality:main"
+geomag-batch = "Geomag.batch_evaluation:main"
+geomag-route-audit = "Geomag.route_identity:main"
+geomag-vector-map = "Geomag.vector_map:main"
+geomag-step-calibration = "Geomag.step_calibration:main"
+geomag-stress = "Geomag.stress_testing:main"
+geomag-iphone-audit = "Geomag.iphone_capture_audit:main"
+geomag-recent = "Geomag.recent_capture_pipeline:main"
+geomag-v2 = "geomag_v2.pipeline:main"
+geomag-v2-free = "geomag_v2.free_path:main"
+geomag-v2-map = "geomag_v2.map_builder:main"
+geomag-v2-retrofit = "geomag_v2.retrofit_v3:main"
+geomag-v2-retrofit-validate = "geomag_v2.retrofit_validation:main"
+geomag-v2-multimap-validate = "geomag_v2.multimap_validation:main"
 
 [project.urls]
 Homepage = "https://github.com/tianhs6523/Lego-like-Geomagnetic-Positioning"
@@ -63,7 +77,7 @@ output_json = "data/processed/uji_mag_grid_kriging_meta.json"
 output_png = "data/processed/uji_mag_grid_kriging.png"
 
 [tool.setuptools.packages.find]
-include = ["Geomag*"]
+include = ["Geomag*", "geomag_v2*"]
 exclude = ["data*", "tests*"]
 
 [tool.setuptools]

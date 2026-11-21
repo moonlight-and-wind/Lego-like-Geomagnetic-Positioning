@@ -31,6 +31,7 @@ _STEP_CONFIG = {
     "fixed_threshold": 10.7,
     "zero_crossing_band": 0.22,
     "min_samples_per_step": 4,
+    "min_step_interval_s": 0.0,
     "freq_ratio_threshold": 3.0,
     "autocorr_threshold": 0.35,
     "weinberg_k": 0.45,
@@ -45,6 +46,20 @@ _ALGO_STATE = {
     "heading_rad": 0.0,
     "is_heading_initialized": False,
     "heading_debug": {},
+    "last_step_time": None,
+    "gyro_bias_z": 0.0,
+    "gyro_bias_samples": 0,
+    "gyro_bias_sum": 0.0,
+    "gyro_bias_pending_sum": 0.0,
+    "gyro_bias_pending_samples": 0,
+    "gyro_bias_pending_start_time": None,
+    "gyro_bias_stationary_confirmed": False,
+    "compass_alignment_rad": None,
+    "last_heading_time": None,
+    "last_yaw_rate_rad_s": None,
+    "gravity_vector": None,
+    "core_motion_yaw_origin_rad": None,
+    "step_length_debug": {},
 }
 
 # ============================================================
@@ -412,6 +427,11 @@ def _build_own_map_interface(
             "shape": "(H, W)",
             "note": "No header recommended; each row is one grid row.",
         },
+        "point_cloud": {
+            "description": "Explicit x/y/magnetic-magnitude rows",
+            "shape": "(N, 3)",
+            "columns": ["x_m", "y_m", "magnitude_uT"],
+        },
     }
 
     return {
@@ -491,9 +511,15 @@ def _bilinear_upsample(matrix: np.ndarray, factor: int) -> np.ndarray:
         return np.asarray(matrix, dtype=float)
     h, w = matrix.shape
     new_h, new_w = h * factor, w * factor
-    # Map new-grid coordinates back to source-grid coordinates
-    y_src = np.linspace(0, h - 1, new_h)
-    x_src = np.linspace(0, w - 1, new_w)
+    # Map each new cell centre back to the source cell-centre coordinate
+    # system. ``linspace(0, h-1, h*factor)`` stretches the centre-to-centre
+    # field over the full physical tile extent.
+    y_src = np.clip(
+        (np.arange(new_h, dtype=float) + 0.5) / factor - 0.5, 0.0, h - 1.0
+    )
+    x_src = np.clip(
+        (np.arange(new_w, dtype=float) + 0.5) / factor - 0.5, 0.0, w - 1.0
+    )
     # Integer and fractional parts for bilinear weights
     y0 = np.floor(y_src).astype(int)
     y1 = np.clip(y0 + 1, 0, h - 1)
@@ -568,11 +594,17 @@ def _calc_auto_bounds_for_tile_matrix(meta):
     tile_size_y_m = _safe_float(meta.get("tile_size_y_m", 1.10), 1.10)
     tile_count_x = int(meta.get("tile_count_x", 0))
     tile_count_y = int(meta.get("tile_count_y", 0))
+    anchor = str(meta.get("anchor", "center")).strip().lower()
+    # Centre-anchored matrices represent finite-area cells, so N cells span
+    # N*cell_size. Corner-anchored matrices represent samples on the boundary,
+    # so N samples span only (N-1)*sample_spacing.
+    extent_count_x = max(0, tile_count_x - 1) if anchor == "corner" else tile_count_x
+    extent_count_y = max(0, tile_count_y - 1) if anchor == "corner" else tile_count_y
     return (
         float(origin_x),
-        float(origin_x + tile_count_x * tile_size_x_m),
+        float(origin_x + extent_count_x * tile_size_x_m),
         float(origin_y),
-        float(origin_y + tile_count_y * tile_size_y_m),
+        float(origin_y + extent_count_y * tile_size_y_m),
     )
 
 
@@ -587,6 +619,7 @@ def _api_get_map(
     config_path="pyproject.toml",
     force_download=False,
     force_extract=False,
+    force_rebuild=False,
     own_grid_array=None,
     own_grid_map_path=None,
     own_grid_format="array",
@@ -612,6 +645,30 @@ def _api_get_map(
         uji_root = data_root_path / "uji_indoorloc_mag"
         zip_path = uji_root / "ujiindoorloc+mag.zip"
         extract_dir = uji_root / "extracted"
+        cached_paths = [
+            Path(output_model_npz),
+            Path(output_preview_npz),
+            Path(output_json),
+            Path(output_png),
+        ]
+        if not force_rebuild and all(path.exists() for path in cached_paths):
+            try:
+                metadata = json.loads(Path(output_json).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                metadata = None
+            if (
+                isinstance(metadata, dict)
+                and float(metadata.get("preview_resolution", -1.0))
+                == preview_resolution
+                and str(metadata.get("variogram_model", "")) == variogram_model
+                and int(metadata.get("points_used_for_kriging", -1))
+                == min(int(metadata.get("points_total", -1)), max_kriging_points)
+            ):
+                metadata["output_json"] = str(output_json)
+                metadata["zip_path"] = str(zip_path)
+                metadata["extract_dir"] = str(extract_dir)
+                return metadata
+
         _download_uji_zip(zip_path, force_download=force_download)
         _extract_uji_zip(zip_path, extract_dir, force_extract=force_extract)
         extracted_root = extract_dir / "UJIIndoorLoc-Mag" / "UJIIndoorLoc-Mag"
@@ -632,6 +689,40 @@ def _api_get_map(
         return map_info
 
     if source == "own":
+        if own_grid_array is None and own_grid_map_path is not None:
+            grid_path = Path(own_grid_map_path)
+            if not grid_path.exists():
+                raise FileNotFoundError(f"Own grid map file not found: {grid_path}")
+            format_token = str(own_grid_format or "").strip().lower()
+            if format_token == "array":
+                format_token = {
+                    ".npy": "npy_matrix",
+                    ".npz": "npz_matrix",
+                    ".csv": "csv_matrix",
+                }.get(grid_path.suffix.lower(), format_token)
+            if format_token == "npy_matrix":
+                own_grid_array = np.load(grid_path, allow_pickle=False)
+            elif format_token == "npz_matrix":
+                with np.load(grid_path, allow_pickle=False) as data:
+                    if "grid_magnitude" in data:
+                        own_grid_array = np.asarray(data["grid_magnitude"], dtype=float)
+                    else:
+                        arrays = [
+                            np.asarray(data[key], dtype=float)
+                            for key in data.files
+                            if np.asarray(data[key]).ndim == 2
+                        ]
+                        if not arrays:
+                            raise ValueError(f"NPZ has no 2D grid array: {grid_path}")
+                        own_grid_array = arrays[0]
+            elif format_token == "csv_matrix":
+                own_grid_array = np.loadtxt(grid_path, delimiter=",")
+            else:
+                raise ValueError(
+                    "own_grid_format must be array, npy_matrix, npz_matrix, "
+                    "csv_matrix, or point_cloud."
+                )
+
         raw_map = _build_own_map_interface(
             own_grid_array=own_grid_array,
             own_grid_map_path=own_grid_map_path,
@@ -646,9 +737,17 @@ def _api_get_map(
         if arr.ndim != 2 or arr.size == 0:
             raise ValueError("`own_grid_array` must be a non-empty 2D array.")
 
-        force_tile_matrix = _bool_from_any(merged_meta.get("force_tile_matrix", False), default=False)
-        point_cloud_mode = "point_cloud" if (arr.shape[1] == 3 and not force_tile_matrix) else "tile_matrix"
+        format_token = str(own_grid_format or "array").strip().lower()
+        point_cloud_mode = (
+            "point_cloud"
+            if format_token in {"point_cloud", "xyz", "xyz_point_cloud"}
+            else "tile_matrix"
+        )
         if point_cloud_mode == "point_cloud":
+            if arr.shape[1] != 3:
+                raise ValueError(
+                    "Point-cloud input must have shape (N, 3) for x/y/magnitude."
+                )
             points = arr
             matrix_grid = None
             raw_map["grid_array"] = None
@@ -867,6 +966,33 @@ def _load_csv_xyz(path, time_candidates, x_candidates, y_candidates, z_candidate
     return unique_times, x[unique_idx], y[unique_idx], z[unique_idx]
 
 
+def _load_csv_scalar(path, time_candidates, value_candidates):
+    path = Path(path)
+    if not path.exists():
+        return None, None
+    with path.open("r", encoding="utf-8", errors="ignore", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames:
+            return None, None
+        time_col = _pick_column(reader.fieldnames, time_candidates)
+        value_col = _pick_column(reader.fieldnames, value_candidates)
+        if time_col is None or value_col is None:
+            return None, None
+        rows = []
+        for row in reader:
+            try:
+                rows.append((float(row[time_col]), float(row[value_col])))
+            except (KeyError, TypeError, ValueError):
+                continue
+    if not rows:
+        return None, None
+    rows.sort(key=lambda item: item[0])
+    times = np.asarray([item[0] for item in rows], dtype=float)
+    values = np.asarray([item[1] for item in rows], dtype=float)
+    unique_times, unique_idx = np.unique(times, return_index=True)
+    return unique_times, values[unique_idx]
+
+
 def _load_own_sensor_frames(own_data_dir):
     base = Path(own_data_dir)
     mag_t, mag_x, mag_y, mag_z = _load_csv_xyz(
@@ -890,11 +1016,23 @@ def _load_own_sensor_frames(own_data_dir):
         y_candidates=["Y (rad/s)", "Y", "gy"],
         z_candidates=["Z (rad/s)", "Z", "gz"],
     )
+    motion_t, motion_yaw = _load_csv_scalar(
+        base / "DeviceMotion.csv",
+        time_candidates=["Time (s)", "time", "timestamp"],
+        value_candidates=["Yaw (rad)", "yaw"],
+    )
 
     # Own-data PDR is acceleration-driven, so keep the accelerometer time axis
     # and align magnetometer/gyroscope samples to it.
-    base_t = acc_t
-    acc_arr = np.column_stack((acc_x, acc_y, acc_z))
+    overlap_start = max(float(acc_t[0]), float(gyr_t[0]), float(mag_t[0]))
+    overlap_end = min(float(acc_t[-1]), float(gyr_t[-1]), float(mag_t[-1]))
+    if overlap_end <= overlap_start:
+        raise ValueError(
+            f"Sensor time ranges do not overlap in own dataset: {own_data_dir}"
+        )
+    overlap = (acc_t >= overlap_start) & (acc_t <= overlap_end)
+    base_t = acc_t[overlap]
+    acc_arr = np.column_stack((acc_x[overlap], acc_y[overlap], acc_z[overlap]))
     gyr_arr = np.column_stack(
         (
             np.interp(base_t, gyr_t, gyr_x),
@@ -909,11 +1047,15 @@ def _load_own_sensor_frames(own_data_dir):
             np.interp(base_t, mag_t, mag_z),
         )
     )
+    aligned_motion_yaw = (
+        None
+        if motion_t is None or motion_yaw is None
+        else np.interp(base_t, motion_t, np.unwrap(motion_yaw))
+    )
 
     frames = []
     for i in range(base_t.size):
-        frames.append(
-            {
+        frame = {
                 "time": float(base_t[i]),
                 "mag": [float(mag_arr[i, 0]), float(mag_arr[i, 1]), float(mag_arr[i, 2])],
                 "acc": [float(acc_arr[i, 0]), float(acc_arr[i, 1]), float(acc_arr[i, 2])],
@@ -921,7 +1063,9 @@ def _load_own_sensor_frames(own_data_dir):
                 "gyro_mode": "angular_rate_rad_s",
                 "source": "own",
             }
-        )
+        if aligned_motion_yaw is not None:
+            frame["core_motion_yaw_rad"] = float(aligned_motion_yaw[i])
+        frames.append(frame)
     if not frames:
         raise ValueError(f"No sensor frames built from own dataset: {own_data_dir}")
     return frames
@@ -1077,6 +1221,20 @@ def _api_get_test_len(
     _ALGO_STATE["heading_rad"] = 0.0
     _ALGO_STATE["is_heading_initialized"] = False
     _ALGO_STATE["heading_debug"] = {}
+    _ALGO_STATE["last_step_time"] = None
+    _ALGO_STATE["gyro_bias_z"] = 0.0
+    _ALGO_STATE["gyro_bias_samples"] = 0
+    _ALGO_STATE["gyro_bias_sum"] = 0.0
+    _ALGO_STATE["gyro_bias_pending_sum"] = 0.0
+    _ALGO_STATE["gyro_bias_pending_samples"] = 0
+    _ALGO_STATE["gyro_bias_pending_start_time"] = None
+    _ALGO_STATE["gyro_bias_stationary_confirmed"] = False
+    _ALGO_STATE["compass_alignment_rad"] = None
+    _ALGO_STATE["last_heading_time"] = None
+    _ALGO_STATE["last_yaw_rate_rad_s"] = None
+    _ALGO_STATE["gravity_vector"] = None
+    _ALGO_STATE["core_motion_yaw_origin_rad"] = None
+    _ALGO_STATE["step_length_debug"] = {}
     return len(frames)
 
 
@@ -1247,6 +1405,19 @@ def _api_judge_step(samples, method=None, **kwargs):
         )
 
     if hit:
+        min_interval_s = max(0.0, float(cfg.get("min_step_interval_s", 0.0)))
+        frame = _ALGO_STATE.get("last_sensor_frame") or {}
+        current_time = frame.get("time")
+        previous_time = _ALGO_STATE.get("last_step_time")
+        if (
+            min_interval_s > 0.0
+            and current_time is not None
+            and previous_time is not None
+            and float(current_time) - float(previous_time) < min_interval_s
+        ):
+            return False
+        if current_time is not None:
+            _ALGO_STATE["last_step_time"] = float(current_time)
         _ALGO_STATE["last_step_samples"] = list(samples)
     return hit
 
@@ -1265,14 +1436,62 @@ def _api_get_step_len(samples, method=None, **kwargs):
     mag_max = float(np.max(mag))
     mag_min = float(np.min(mag))
 
+    # Weinberg feature: (Amax - Amin)^(1/4).
+    delta = max(mag_max - mag_min, 1e-9)
+    amplitude_feature = float(delta**0.25)
+    base_length = float(cfg["weinberg_k"]) * amplitude_feature
     if method == "weinberg":
-        # Weinberg: L = k * (Amax - Amin)^(1/4)
-        delta = max(mag_max - mag_min, 1e-9)
-        return float(cfg["weinberg_k"]) * float(delta ** 0.25)
+        _ALGO_STATE["step_length_debug"] = {
+            "method": method,
+            "amplitude_feature": amplitude_feature,
+            "base_length_m": base_length,
+            "step_length_m": base_length,
+        }
+        return base_length
+    if method == "adaptive":
+        timestamps = [
+            float(item[3])
+            for item in (samples or [])
+            if item is not None and len(item) >= 4 and item[3] is not None
+        ]
+        duration = (
+            max(1e-3, float(timestamps[-1] - timestamps[0]))
+            if len(timestamps) >= 2
+            else max(1e-3, float(len(mag)) * float(_SENSOR_STATE.get("dt", 0.02)))
+        )
+        cadence_hz = 1.0 / duration
+        variability = float(np.std(mag))
+        intercept = float(kwargs.get("intercept_m", 0.0))
+        base_weight = float(kwargs.get("base_weight", 1.0))
+        cadence_weight = float(kwargs.get("cadence_weight", 0.0))
+        cadence_reference = float(kwargs.get("cadence_reference_hz", 1.8))
+        variability_weight = float(kwargs.get("variability_weight", 0.0))
+        variability_reference = float(kwargs.get("variability_reference", 1.0))
+        length = (
+            intercept
+            + base_weight * base_length
+            + cadence_weight * (cadence_hz - cadence_reference)
+            + variability_weight * (variability - variability_reference)
+        )
+        minimum = float(kwargs.get("min_step_length_m", 0.15))
+        maximum = float(kwargs.get("max_step_length_m", 1.20))
+        length = float(np.clip(length, minimum, maximum))
+        _ALGO_STATE["step_length_debug"] = {
+            "method": method,
+            "amplitude_feature": amplitude_feature,
+            "base_length_m": base_length,
+            "duration_s": duration,
+            "cadence_hz": cadence_hz,
+            "acc_magnitude_std": variability,
+            "step_length_m": length,
+        }
+        return length
     if method == "fixed":
         return float(cfg["fixed_step_length_m"])
 
-    raise ValueError("Unsupported step length method. Supported: ['weinberg', 'fixed']")
+    raise ValueError(
+        "Unsupported step length method. Supported: ['weinberg', 'adaptive', 'fixed']"
+    )
 
 
 # TODO: Estimate heading angle from buffered samples.
@@ -1318,6 +1537,15 @@ def _api_get_heading_angle(
     alpha=None,
     initial_heading_rad=None,
     heading_offset_deg=None,
+    calibrate_gyro_bias=True,
+    stationary_gyro_threshold=0.12,
+    stationary_acc_tolerance=0.30,
+    stationary_min_duration_s=0.25,
+    compass_reject_deg=60.0,
+    compass_correction_limit_deg=6.0,
+    project_gyro_to_gravity=True,
+    gravity_time_constant_s=0.5,
+    gyro_rate_scale=1.0,
 ):
     if samples is None or len(samples) == 0:
         return float(_ALGO_STATE["heading_rad"])
@@ -1325,6 +1553,7 @@ def _api_get_heading_angle(
     acc_arr = []
     gyro_arr = []
     mag_arr = []
+    sample_times = []
     for item in samples:
         if item is None or len(item) < 3:
             continue
@@ -1334,6 +1563,8 @@ def _api_get_heading_angle(
         acc_arr.append([float(acc[0]), float(acc[1]), float(acc[2])])
         gyro_arr.append([float(gyro[0]), float(gyro[1]), float(gyro[2])])
         mag_arr.append([float(mag[0]), float(mag[1]), float(mag[2])])
+        if len(item) >= 4 and item[3] is not None:
+            sample_times.append(float(item[3]))
     if not acc_arr:
         return float(_ALGO_STATE["heading_rad"])
 
@@ -1344,6 +1575,81 @@ def _api_get_heading_angle(
     sensor_source = str(last_frame.get("source", _SENSOR_STATE.get("source", "unknown"))).lower()
     gyro_mode = str(last_frame.get("gyro_mode", "unknown"))
     gyro_abs_med = float(np.median(np.abs(gyro_arr), axis=0).max()) if gyro_arr.size else 0.0
+
+    if calibrate_gyro_bias and gyro_arr.size:
+        acc_norm = np.linalg.norm(acc_arr, axis=1)
+        gyro_norm = np.linalg.norm(gyro_arr, axis=1)
+        stationary = (
+            (np.abs(acc_norm - 9.80665) <= float(stationary_acc_tolerance))
+            & (gyro_norm <= float(stationary_gyro_threshold))
+        )
+        candidates = (
+            gyro_arr[:, 2]
+            if bool(np.all(stationary))
+            else np.asarray([], dtype=float)
+        )
+        if candidates.size:
+            confirmed = bool(
+                _ALGO_STATE.get("gyro_bias_stationary_confirmed", False)
+            )
+            if confirmed:
+                accepted_sum = float(np.sum(candidates))
+                accepted_count = int(candidates.size)
+            else:
+                if _ALGO_STATE.get("gyro_bias_pending_start_time") is None:
+                    _ALGO_STATE["gyro_bias_pending_start_time"] = (
+                        sample_times[0] if sample_times else None
+                    )
+                _ALGO_STATE["gyro_bias_pending_sum"] = float(
+                    _ALGO_STATE.get("gyro_bias_pending_sum", 0.0)
+                    + float(np.sum(candidates))
+                )
+                _ALGO_STATE["gyro_bias_pending_samples"] = int(
+                    _ALGO_STATE.get("gyro_bias_pending_samples", 0)
+                    + int(candidates.size)
+                )
+                nominal_dt = float(_SENSOR_STATE.get("dt", 0.02))
+                pending_start = _ALGO_STATE.get(
+                    "gyro_bias_pending_start_time"
+                )
+                pending_duration = (
+                    float(
+                        _ALGO_STATE.get("gyro_bias_pending_samples", 0)
+                    )
+                    * nominal_dt
+                    if not sample_times or pending_start is None
+                    else float(sample_times[-1] - pending_start + nominal_dt)
+                )
+                if pending_duration >= max(
+                    0.0, float(stationary_min_duration_s)
+                ):
+                    accepted_sum = float(
+                        _ALGO_STATE.get("gyro_bias_pending_sum", 0.0)
+                    )
+                    accepted_count = int(
+                        _ALGO_STATE.get("gyro_bias_pending_samples", 0)
+                    )
+                    _ALGO_STATE["gyro_bias_stationary_confirmed"] = True
+                    _ALGO_STATE["gyro_bias_pending_sum"] = 0.0
+                    _ALGO_STATE["gyro_bias_pending_samples"] = 0
+                else:
+                    accepted_sum = 0.0
+                    accepted_count = 0
+            if accepted_count:
+                old_count = int(_ALGO_STATE.get("gyro_bias_samples", 0))
+                old_sum = float(_ALGO_STATE.get("gyro_bias_sum", 0.0))
+                new_count = old_count + accepted_count
+                new_sum = old_sum + accepted_sum
+                _ALGO_STATE["gyro_bias_z"] = float(
+                    new_sum / max(new_count, 1)
+                )
+                _ALGO_STATE["gyro_bias_samples"] = int(new_count)
+                _ALGO_STATE["gyro_bias_sum"] = float(new_sum)
+        else:
+            _ALGO_STATE["gyro_bias_pending_sum"] = 0.0
+            _ALGO_STATE["gyro_bias_pending_samples"] = 0
+            _ALGO_STATE["gyro_bias_pending_start_time"] = None
+            _ALGO_STATE["gyro_bias_stationary_confirmed"] = False
 
     method = str(method).lower()
     offset_deg = _STEP_CONFIG.get("heading_offset_deg", 0.0) if heading_offset_deg is None else heading_offset_deg
@@ -1358,11 +1664,22 @@ def _api_get_heading_angle(
             gyro_mode = "angular_rate_rad_s"
 
     raw_compass_rad = _heading_from_acc_mag(acc_arr.mean(axis=0), mag_arr.mean(axis=0))
-    compass_map_rad = (
-        _azimuth_rad_to_map_heading_rad(raw_compass_rad, source=sensor_source)
-        if sensor_source == "own"
-        else raw_compass_rad
-    )
+    if sensor_source == "own" and initial_heading_rad is not None:
+        if _ALGO_STATE.get("compass_alignment_rad") is None:
+            _ALGO_STATE["compass_alignment_rad"] = _wrap_angle_pi(
+                float(initial_heading_rad) - raw_compass_rad
+            )
+        compass_map_rad = _wrap_angle_pi(
+            raw_compass_rad + float(_ALGO_STATE["compass_alignment_rad"])
+        )
+        compass_is_start_calibrated = True
+    else:
+        compass_map_rad = (
+            _azimuth_rad_to_map_heading_rad(raw_compass_rad, source=sensor_source)
+            if sensor_source == "own"
+            else raw_compass_rad
+        )
+        compass_is_start_calibrated = False
 
     offset_baked_into_heading = False
     if gyro_mode == "angular_rate_rad_s" and not _ALGO_STATE.get("is_heading_initialized", False):
@@ -1389,15 +1706,102 @@ def _api_get_heading_angle(
                     return _azimuth_rad_to_map_heading_rad(math.radians(heading_deg), source=sensor_source)
                 return _azimuth_deg_to_xy_heading_rad(heading_deg)
             return _wrap_angle_pi(math.radians(heading_deg))
-        # Standard gyro angular-rate integration (z-yaw).
-        dt_used = float(_SENSOR_STATE.get("dt", 0.02) if dt is None else dt)
-        return _wrap_angle_pi(float(_ALGO_STATE["heading_rad"] + np.mean(gyro_arr[:, 2]) * dt_used * len(gyro_arr)))
+        # Integrate yaw continuously. For a tilted handheld phone, project the
+        # full angular-rate vector onto the low-pass gravity direction rather
+        # than assuming device Z is exactly vertical.
+        gyro_corrected = np.array(gyro_arr, dtype=float, copy=True)
+        gyro_corrected[:, 2] -= float(_ALGO_STATE.get("gyro_bias_z", 0.0))
+        # Apply a dimensionless scale only after removing the stationary bias.
+        # This supports calibration on an independent known-turn capture while
+        # preserving 1.0 as the uncalibrated baseline.
+        gyro_corrected *= float(gyro_rate_scale)
+        if project_gyro_to_gravity:
+            gravity = _ALGO_STATE.get("gravity_vector")
+            current_time = sample_times[-1] if sample_times else None
+            previous_time = _ALGO_STATE.get("last_heading_time")
+            nominal_dt = float(_SENSOR_STATE.get("dt", 0.02))
+            elapsed = (
+                nominal_dt
+                if current_time is None or previous_time is None
+                else max(0.0, float(current_time) - float(previous_time))
+            )
+            tau = max(1e-3, float(gravity_time_constant_s))
+            alpha_g = math.exp(-min(elapsed, 1.0) / tau)
+            acc_mean = np.mean(acc_arr, axis=0)
+            gravity = (
+                np.asarray(acc_mean, dtype=float)
+                if gravity is None
+                else alpha_g * np.asarray(gravity, dtype=float)
+                + (1.0 - alpha_g) * np.asarray(acc_mean, dtype=float)
+            )
+            _ALGO_STATE["gravity_vector"] = np.asarray(gravity, dtype=float)
+            gravity_norm = float(np.linalg.norm(gravity))
+            if gravity_norm > 1e-8:
+                yaw_rates = gyro_corrected @ (gravity / gravity_norm)
+            else:
+                yaw_rates = gyro_corrected[:, 2]
+        else:
+            yaw_rates = gyro_corrected[:, 2]
 
-    yaw_gyro = gyro_heading_estimate()
-    yaw_compass = _wrap_angle_pi(compass_map_rad + heading_offset_rad) if sensor_source == "own" else compass_map_rad
+        previous_rate = _ALGO_STATE.get("last_yaw_rate_rad_s")
+        if len(sample_times) == len(yaw_rates) and len(sample_times) >= 2:
+            delta_yaw = float(np.trapezoid(yaw_rates, np.asarray(sample_times, dtype=float)))
+            dt_used = float(sample_times[-1] - sample_times[0])
+        elif len(sample_times) == 1:
+            if _ALGO_STATE.get("last_heading_time") is None:
+                dt_used = 0.0
+                delta_yaw = 0.0
+            else:
+                dt_used = max(
+                    0.0,
+                    float(sample_times[0]) - float(_ALGO_STATE["last_heading_time"]),
+                )
+                current_rate = float(yaw_rates[-1])
+                rate0 = current_rate if previous_rate is None else float(previous_rate)
+                delta_yaw = 0.5 * (rate0 + current_rate) * dt_used
+        else:
+            dt_used = float(_SENSOR_STATE.get("dt", 0.02) if dt is None else dt)
+            delta_yaw = float(np.mean(yaw_rates) * dt_used * len(yaw_rates))
+
+        if sample_times:
+            _ALGO_STATE["last_heading_time"] = float(sample_times[-1])
+        _ALGO_STATE["last_yaw_rate_rad_s"] = float(yaw_rates[-1])
+        _ALGO_STATE["heading_dt_used_s"] = float(dt_used)
+        _ALGO_STATE["yaw_rate_rad_s"] = float(yaw_rates[-1])
+        return _wrap_angle_pi(float(_ALGO_STATE["heading_rad"] + delta_yaw))
+
+    yaw_gyro = gyro_heading_estimate() if method != "core_motion" else None
+    yaw_compass = (
+        compass_map_rad
+        if compass_is_start_calibrated
+        else (
+            _wrap_angle_pi(compass_map_rad + heading_offset_rad)
+            if sensor_source == "own"
+            else compass_map_rad
+        )
+    )
     alpha_used = None
 
-    if method == "gyro":
+    if method == "core_motion":
+        motion_yaw = last_frame.get("core_motion_yaw_rad")
+        if motion_yaw is None or not math.isfinite(float(motion_yaw)):
+            raise ValueError(
+                "core_motion heading requires DeviceMotion.csv with a finite "
+                "Yaw (rad) column."
+            )
+        if _ALGO_STATE.get("core_motion_yaw_origin_rad") is None:
+            _ALGO_STATE["core_motion_yaw_origin_rad"] = float(motion_yaw)
+        motion_delta = float(
+            float(motion_yaw)
+            - float(_ALGO_STATE["core_motion_yaw_origin_rad"])
+        )
+        motion_anchor = (
+            float(initial_heading_rad)
+            if initial_heading_rad is not None
+            else float(heading_offset_rad)
+        )
+        yaw = _wrap_angle_pi(motion_anchor + motion_delta)
+    elif method == "gyro":
         yaw = yaw_gyro
     elif method == "tilt_compass":
         yaw = yaw_compass
@@ -1406,11 +1810,19 @@ def _api_get_heading_angle(
         # Use a high alpha for UJI because orientation channel is typically stable.
         alpha_used = 0.98 if alpha is None and sensor_source == "uji" else (0.90 if alpha is None else float(alpha))
         alpha_used = float(np.clip(alpha_used, 0.0, 1.0))
-        sy = alpha_used * math.sin(yaw_gyro) + (1.0 - alpha_used) * math.sin(yaw_compass)
-        cy = alpha_used * math.cos(yaw_gyro) + (1.0 - alpha_used) * math.cos(yaw_compass)
-        yaw = _wrap_angle_pi(math.atan2(sy, cy))
+        compass_innovation = _wrap_angle_pi(yaw_compass - yaw_gyro)
+        if abs(compass_innovation) > math.radians(float(compass_reject_deg)):
+            compass_correction = 0.0
+        else:
+            compass_correction = (1.0 - alpha_used) * compass_innovation
+            limit = math.radians(max(0.0, float(compass_correction_limit_deg)))
+            compass_correction = float(np.clip(compass_correction, -limit, limit))
+        yaw = _wrap_angle_pi(yaw_gyro + compass_correction)
     else:
-        raise ValueError("Unsupported heading method. Supported: ['gyro', 'tilt_compass', 'q_fused']")
+        raise ValueError(
+            "Unsupported heading method. Supported: "
+            "['gyro', 'core_motion', 'tilt_compass', 'q_fused']"
+        )
 
     if not (sensor_source == "own" and gyro_mode == "angular_rate_rad_s"):
         yaw = _wrap_angle_pi(float(yaw + heading_offset_rad))
@@ -1427,8 +1839,36 @@ def _api_get_heading_angle(
         "alpha_used": alpha_used,
         "initial_heading_rad": None if initial_heading_rad is None else float(initial_heading_rad),
         "offset_baked_into_heading": bool(offset_baked_into_heading),
-        "yaw_gyro_deg": float(math.degrees(yaw_gyro)),
+        "yaw_gyro_deg": (
+            None if yaw_gyro is None else float(math.degrees(yaw_gyro))
+        ),
         "yaw_compass_deg": float(math.degrees(yaw_compass)),
+        "compass_innovation_deg": (
+            None
+            if yaw_gyro is None
+            else float(
+                math.degrees(_wrap_angle_pi(yaw_compass - yaw_gyro))
+            )
+        ),
+        "core_motion_yaw_rad": last_frame.get("core_motion_yaw_rad"),
+        "gyro_bias_z_rad_s": float(_ALGO_STATE.get("gyro_bias_z", 0.0)),
+        "gyro_bias_samples": int(_ALGO_STATE.get("gyro_bias_samples", 0)),
+        "gyro_bias_pending_samples": int(
+            _ALGO_STATE.get("gyro_bias_pending_samples", 0)
+        ),
+        "gyro_bias_stationary_confirmed": bool(
+            _ALGO_STATE.get("gyro_bias_stationary_confirmed", False)
+        ),
+        "heading_dt_used_s": float(_ALGO_STATE.get("heading_dt_used_s", 0.0)),
+        "yaw_rate_rad_s": float(_ALGO_STATE.get("yaw_rate_rad_s", 0.0)),
+        "gyro_rate_scale": float(gyro_rate_scale),
+        "project_gyro_to_gravity": bool(project_gyro_to_gravity),
+        "compass_start_calibrated": bool(compass_is_start_calibrated),
+        "compass_alignment_deg": (
+            None
+            if _ALGO_STATE.get("compass_alignment_rad") is None
+            else float(math.degrees(_ALGO_STATE["compass_alignment_rad"]))
+        ),
         "heading_rad": float(yaw),
         "heading_deg": float(math.degrees(yaw)),
     }
@@ -1554,6 +1994,10 @@ def get_sensor(*args, **kwargs):
     return _api_get_sensor(*args, **kwargs)
 
 
+def get_sensor_diagnostics():
+    return dict(_ALGO_STATE.get("last_sensor_frame") or {})
+
+
 def available_step_judge_methods(*args, **kwargs):
     return _api_available_step_judge_methods(*args, **kwargs)
 
@@ -1570,8 +2014,16 @@ def get_step_len(*args, **kwargs):
     return _api_get_step_len(*args, **kwargs)
 
 
+def get_step_length_diagnostics():
+    return dict(_ALGO_STATE.get("step_length_debug", {}))
+
+
 def get_heading_angle(*args, **kwargs):
     return _api_get_heading_angle(*args, **kwargs)
+
+
+def get_heading_diagnostics():
+    return dict(_ALGO_STATE.get("heading_debug", {}))
 
 
 def get_mag(*args, **kwargs):

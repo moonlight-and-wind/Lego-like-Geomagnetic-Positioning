@@ -16,7 +16,7 @@ def build_demo_tile_matrix(raw_matrix, target_cols=12):
 
 
 def main():
-    own_dataset_key = "route1_run1"
+    own_dataset_key = "route1_run2"
     dataset_spec = get_own_dataset_spec(own_dataset_key)
     tile_matrix = build_demo_tile_matrix(data, target_cols=12)
 

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "capture_metadata.schema.json",
+  "title": "Geomagnetic phone capture metadata",
+  "type": "object",
+  "required": [
+    "dataset_key",
+    "route_label",
+    "device_pose",
+    "start_stationary_s",
+    "end_stationary_s",
+    "finish_behavior",
+    "turn_events"
+  ],
+  "properties": {
+    "dataset_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operator": {
+      "type": ["string", "null"]
+    },
+    "device_pose": {
+      "enum": ["face_up_front_forward", "other"]
+    },
+    "walking_speed_profile": {
+      "enum": ["approximately_constant", "variable", "unknown"]
+    },
+    "start_stationary_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "end_stationary_s": {
+      "type": "number",
+      "minimum": 0
+    },
+    "finish_behavior": {
+      "enum": ["stationary_until_recording_stops", "recording_stops_while_walking", "unknown"]
+    },
+    "turn_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["time_s", "turn_deg"],
+        "properties": {
+          "time_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "turn_deg": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

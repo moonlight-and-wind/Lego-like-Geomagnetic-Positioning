@@ -1,0 +1,18 @@
+{
+  "dataset_key": "route3_run1",
+  "route_label": "route3",
+  "operator": null,
+  "device_pose": "face_up_front_forward",
+  "walking_speed_profile": "approximately_constant",
+  "start_stationary_s": 3.0,
+  "end_stationary_s": 3.0,
+  "finish_behavior": "stationary_until_recording_stops",
+  "turn_events": [
+    {
+      "time_s": 8.2,
+      "turn_deg": -90.0,
+      "note": "第一处右转"
+    }
+  ],
+  "notes": "沿任意实际路线行走；只有受控砖缝实验才需要保持直线和 90 度转弯。"
+}

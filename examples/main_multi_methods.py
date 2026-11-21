@@ -7,12 +7,11 @@ import numpy as np
 
 from Geomag import (
     Initializer,
-    PDRConfig,
-    PFConfig,
     build_pdr_from_config,
     build_pf_from_config,
 )
 from Geomag.algorithms import get_sensor, get_test_len, get_true_route
+from Geomag.branching import build_uji_configs
 from Geomag.models import Particle, PFState
 from Geomag.pipeline import (
     GeomagPipeline,
@@ -24,36 +23,7 @@ from Geomag.pipeline import (
 
 
 def build_main_configs():
-    pdr_config = PDRConfig(
-        step_judge="peak_dynamic",
-        step_judge_params={
-            "peak_sigma": 0.4,
-            "peak_prominence": 0.2,
-            "min_samples_per_step": 4.5,
-        },
-        step_length="weinberg",
-        step_length_params={"weinberg_k": 0.45},
-        heading="gyro",
-        heading_params={"dt": 0.01},
-        mag="norm_mean",
-    )
-    pf_config = PFConfig(
-        state_params={
-            "num_particles": 5000,
-            "min_particles": 2000,
-            "max_particles": 10000000000000,
-        },
-        motion="gaussian",
-        motion_params={"heading_noise_std": 0.01, "step_noise_std": 0.01},
-        weight="ddtw",
-        weight_params={"sigma": 0.1, "max_hist": 100},
-        particle_size="kld",
-        particle_size_params={"epsilon": 0.10, "bin_size_xy": 0.5, "bin_size_theta": 0.35},
-        resample_trigger="ess_or_target",
-        resample_trigger_params={"ess_ratio_threshold": 0.40},
-        resample="cso",
-    )
-    return pdr_config, pf_config
+    return build_uji_configs()
 
 
 def build_main_context():
@@ -197,6 +167,9 @@ def simple_resample_pf_state(pf_state, target_count=None, hist_keep=64):
                 theta=float(src.theta),
                 weight=float(unif_w),
                 mag_hist=list(src.mag_hist[-keep:]),
+                alive=bool(src.alive),
+                step_scale=float(src.step_scale),
+                heading_bias=float(src.heading_bias),
             )
         )
 
@@ -307,7 +280,7 @@ class MagicolClassicTracker:
         return est
 
 
-def summarize_method_errors(tracks, route, geomag_map):
+def summarize_method_errors(tracks, route, geomag_map, progress=None):
     route_x, route_y = GeomagPipeline._route_to_xy_for_error(route, geomag_map)
     summaries = {}
     for name, track in tracks.items():
@@ -315,7 +288,9 @@ def summarize_method_errors(tracks, route, geomag_map):
             series = None
             stats = None
         else:
-            series = GeomagPipeline._compute_error_series(track, route_x, route_y)
+            series = GeomagPipeline._compute_error_series(
+                track, route_x, route_y, progress=progress
+            )
             stats = GeomagPipeline._summarize_error(series)
         summaries[name] = {
             "error_series": None if series is None else np.asarray(series, dtype=float).tolist(),
@@ -456,6 +431,7 @@ def run_comparison(
     particle_counts_simple = [len(pf_state_simple.particles)]
     geomag_hist = []
     sample_buffer = []
+    track_progress = [0.0]
 
     kf_state = np.asarray(start_xy, dtype=float)
     kf_cov = np.eye(2, dtype=float) * 0.5
@@ -471,15 +447,18 @@ def run_comparison(
         max_hist=int((pf_config.weight_params or {}).get("max_hist", 100)),
     )
 
-    test_len = get_test_len(
+    full_test_len = get_test_len(
         source=context.sensor_source,
         data_root=context.data_root,
         uji_test_file=context.uji_test_file,
         own_data_dir=context.own_data_dir,
         own_dataset_key=own_dataset_key,
     )
+    test_len = int(full_test_len)
     if max_frames is not None:
-        test_len = min(int(max_frames), int(test_len))
+        if int(max_frames) <= 0:
+            raise ValueError("max_frames must be positive or None.")
+        test_len = min(int(max_frames), test_len)
 
     def _print_progress(current, total, width=36):
         total = max(int(total), 1)
@@ -546,7 +525,12 @@ def run_comparison(
                     pf_state_simple,
                     target_count=int(simple_ctx.get("target_n", len(pf_state_simple.particles))),
                 )
-            pf_simple_xy = tuple(map(float, pf_state_simple.get_pos()))
+            pf_simple_xy = tuple(
+                map(
+                    float,
+                    simple_ctx.get("posterior_pos", pf_state_simple.get_pos()),
+                )
+            )
 
         tracks["pf_simple_resample"].append(pf_simple_xy)
         particle_counts_simple.append(len(pf_state_simple.particles))
@@ -579,11 +563,17 @@ def run_comparison(
         )
         tracks["magicol_classic"].append((float(magicol_xy[0]), float(magicol_xy[1])))
 
+        track_progress.append(float(i + 1) / max(float(full_test_len), 1.0))
         sample_buffer.clear()
         _print_progress(i + 1, test_len)
 
     print()
-    summaries = summarize_method_errors(tracks=tracks, route=route, geomag_map=context.geomag_map)
+    summaries = summarize_method_errors(
+        tracks=tracks,
+        route=route,
+        geomag_map=context.geomag_map,
+        progress=track_progress,
+    )
     print_summary_table(summaries)
     saved_plot = plot_comparison(
         tracks=tracks,
@@ -607,6 +597,7 @@ def run_comparison(
         "tracks": {k: [list(map(float, xy)) for xy in v] for k, v in tracks.items()},
         "particle_counts": [int(v) for v in particle_counts],
         "particle_counts_simple_resample": [int(v) for v in particle_counts_simple],
+        "track_progress": [float(v) for v in track_progress],
         "show_flag": bool(show),
         "output_png": saved_plot,
     }

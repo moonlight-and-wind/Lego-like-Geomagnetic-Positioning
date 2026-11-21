@@ -1,0 +1,547 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* GeomagMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GeomagMacApp.swift */; };
+		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ContentView.swift */; };
+		A10000000000000000000003 /* PositioningResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* PositioningResult.swift */; };
+		A10000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AppModel.swift */; };
+		A10000000000000000000007 /* native_route_13_2.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* native_route_13_2.json */; };
+		A10000000000000000000008 /* native_route_13_3.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* native_route_13_3.json */; };
+		A10000000000000000000009 /* native_route_15_2.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* native_route_15_2.json */; };
+		A10000000000000000000015 /* native_route_15_3.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* native_route_15_3.json */; };
+		A10000000000000000000016 /* GenericMagneticMapStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* GenericMagneticMapStore.swift */; };
+		A10000000000000000000018 /* PipelineState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* PipelineState.swift */; };
+		A10000000000000000000019 /* TrajectoryAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* TrajectoryAnalysis.swift */; };
+		A1000000000000000000001A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* Theme.swift */; };
+		A1000000000000000000001B /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* Components.swift */; };
+		A1000000000000000000001C /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* AppShellView.swift */; };
+		A1000000000000000000001D /* DataStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* DataStageView.swift */; };
+		A1000000000000000000001E /* MapStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* MapStageView.swift */; };
+		A1000000000000000000001F /* RunStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* RunStageView.swift */; };
+		A10000000000000000000020 /* AnalysisStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* AnalysisStageView.swift */; };
+		A10000000000000000000021 /* TrajectoryPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* TrajectoryPlot.swift */; };
+		A10000000000000000000022 /* RunsRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* RunsRailView.swift */; };
+		A10000000000000000000023 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* InspectorView.swift */; };
+		A10000000000000000000024 /* StepErrorStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* StepErrorStrip.swift */; };
+		A10000000000000000000025 /* ReportExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* ReportExporter.swift */; };
+		A10000000000000000000027 /* RunComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* RunComparison.swift */; };
+		A10000000000000000000028 /* ComparisonPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* ComparisonPlot.swift */; };
+		A10000000000000000000029 /* ComparisonStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* ComparisonStageView.swift */; };
+		A10000000000000000000017 /* MagneticMaps in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* MagneticMaps */; };
+		A10000000000000000000026 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* Assets.xcassets */; };
+		A1000000000000000000000B /* AlgorithmSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* AlgorithmSettings.swift */; };
+		A1000000000000000000000C /* ResultExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* ResultExporter.swift */; };
+		A1000000000000000000000D /* DatasetImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* DatasetImport.swift */; };
+		A1000000000000000000000E /* NativePositioningEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* NativePositioningEngine.swift */; };
+		A1000000000000000000000F /* NativeData in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* NativeData */; };
+		A10000000000000000000010 /* DeviceHeadingResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* DeviceHeadingResolver.swift */; };
+		A10000000000000000000011 /* ControlledMotionProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* ControlledMotionProfile.swift */; };
+		A10000000000000000000012 /* ControlledMagneticFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ControlledMagneticFusion.swift */; };
+		A10000000000000000000013 /* ControlledMagneticTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* ControlledMagneticTemplates.swift */; };
+		A10000000000000000000014 /* MagneticTemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MagneticTemplateStore.swift */; };
+		D10000000000000000000001 /* NativeEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* NativeEngineTests.swift */; };
+		D10000000000000000000002 /* PipelineStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PipelineStateTests.swift */; };
+		D10000000000000000000003 /* TrajectoryAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* TrajectoryAnalysisTests.swift */; };
+		D10000000000000000000004 /* ExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* ExportTests.swift */; };
+		D10000000000000000000005 /* RunComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* RunComparisonTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D60000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A60000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A50000000000000000000001;
+			remoteInfo = GeomagMac;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* GeomagMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeomagMacApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* PositioningResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositioningResult.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* native_route_13_2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = native_route_13_2.json; sourceTree = "<group>"; };
+		A20000000000000000000008 /* native_route_13_3.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = native_route_13_3.json; sourceTree = "<group>"; };
+		A20000000000000000000009 /* native_route_15_2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = native_route_15_2.json; sourceTree = "<group>"; };
+		A2000000000000000000000A /* GeomagMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeomagMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000C /* AlgorithmSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlgorithmSettings.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* ResultExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultExporter.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* DatasetImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetImport.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* PipelineState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineState.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* TrajectoryAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrajectoryAnalysis.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* DataStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStageView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* MapStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapStageView.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* RunStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunStageView.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* AnalysisStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisStageView.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* TrajectoryPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrajectoryPlot.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* RunsRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunsRailView.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* StepErrorStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepErrorStrip.swift; sourceTree = "<group>"; };
+		A20000000000000000000026 /* ReportExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportExporter.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* RunComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunComparison.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* ComparisonPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonPlot.swift; sourceTree = "<group>"; };
+		A2000000000000000000002A /* ComparisonStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonStageView.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* NativePositioningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePositioningEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* NativeData */ = {isa = PBXFileReference; explicitFileType = folder; path = NativeData; sourceTree = "<group>"; };
+		A20000000000000000000011 /* DeviceHeadingResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceHeadingResolver.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* ControlledMotionProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlledMotionProfile.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* ControlledMagneticFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlledMagneticFusion.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* ControlledMagneticTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlledMagneticTemplates.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* MagneticTemplateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticTemplateStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* native_route_15_3.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = native_route_15_3.json; sourceTree = "<group>"; };
+		A20000000000000000000017 /* GenericMagneticMapStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericMagneticMapStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* MagneticMaps */ = {isa = PBXFileReference; explicitFileType = folder; path = MagneticMaps; sourceTree = "<group>"; };
+		A20000000000000000000027 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D20000000000000000000001 /* NativeEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEngineTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000003 /* PipelineStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineStateTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000004 /* TrajectoryAnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrajectoryAnalysisTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000005 /* ExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000006 /* RunComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunComparisonTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000002 /* GeomagMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeomagMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000002 /* GeomagMac */,
+				D40000000000000000000001 /* GeomagMacTests */,
+				A40000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000000000000000000002 /* GeomagMac */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* GeomagMacApp.swift */,
+				A20000000000000000000002 /* ContentView.swift */,
+				A40000000000000000000003 /* Models */,
+				A40000000000000000000008 /* Native */,
+				A40000000000000000000004 /* Views */,
+				A40000000000000000000005 /* Resources */,
+			);
+			path = GeomagMac;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000003 /* PositioningResult.swift */,
+				A20000000000000000000004 /* AppModel.swift */,
+				A2000000000000000000000C /* AlgorithmSettings.swift */,
+				A2000000000000000000000D /* ResultExporter.swift */,
+				A2000000000000000000000E /* DatasetImport.swift */,
+				A20000000000000000000019 /* PipelineState.swift */,
+				A2000000000000000000001A /* TrajectoryAnalysis.swift */,
+				A20000000000000000000026 /* ReportExporter.swift */,
+				A20000000000000000000028 /* RunComparison.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000004 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001B /* Theme.swift */,
+				A2000000000000000000001C /* Components.swift */,
+				A2000000000000000000001D /* AppShellView.swift */,
+				A2000000000000000000001E /* DataStageView.swift */,
+				A2000000000000000000001F /* MapStageView.swift */,
+				A20000000000000000000020 /* RunStageView.swift */,
+				A20000000000000000000021 /* AnalysisStageView.swift */,
+				A20000000000000000000022 /* TrajectoryPlot.swift */,
+				A20000000000000000000023 /* RunsRailView.swift */,
+				A20000000000000000000024 /* InspectorView.swift */,
+				A20000000000000000000025 /* StepErrorStrip.swift */,
+				A20000000000000000000029 /* ComparisonPlot.swift */,
+				A2000000000000000000002A /* ComparisonStageView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000005 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A40000000000000000000007 /* Samples */,
+				A20000000000000000000010 /* NativeData */,
+				A20000000000000000000018 /* MagneticMaps */,
+				A20000000000000000000027 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000A /* GeomagMac.app */,
+				D20000000000000000000002 /* GeomagMacTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000007 /* Samples */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* native_route_13_2.json */,
+				A20000000000000000000008 /* native_route_13_3.json */,
+				A20000000000000000000009 /* native_route_15_2.json */,
+				A20000000000000000000016 /* native_route_15_3.json */,
+			);
+			path = Samples;
+			sourceTree = "<group>";
+		};
+		A40000000000000000000008 /* Native */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000F /* NativePositioningEngine.swift */,
+				A20000000000000000000011 /* DeviceHeadingResolver.swift */,
+				A20000000000000000000012 /* ControlledMotionProfile.swift */,
+				A20000000000000000000013 /* ControlledMagneticFusion.swift */,
+				A20000000000000000000014 /* ControlledMagneticTemplates.swift */,
+				A20000000000000000000015 /* MagneticTemplateStore.swift */,
+				A20000000000000000000017 /* GenericMagneticMapStore.swift */,
+			);
+			path = Native;
+			sourceTree = "<group>";
+		};
+		D40000000000000000000001 /* GeomagMacTests */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000001 /* NativeEngineTests.swift */,
+				D20000000000000000000003 /* PipelineStateTests.swift */,
+				D20000000000000000000004 /* TrajectoryAnalysisTests.swift */,
+				D20000000000000000000005 /* ExportTests.swift */,
+				D20000000000000000000006 /* RunComparisonTests.swift */,
+			);
+			path = GeomagMacTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* GeomagMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A90000000000000000000002 /* Build configuration list for PBXNativeTarget "GeomagMac" */;
+			buildPhases = (
+				A70000000000000000000001 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A80000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GeomagMac;
+			productName = GeomagMac;
+			productReference = A2000000000000000000000A /* GeomagMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D50000000000000000000001 /* GeomagMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D90000000000000000000001 /* Build configuration list for PBXNativeTarget "GeomagMacTests" */;
+			buildPhases = (
+				D70000000000000000000001 /* Sources */,
+				D30000000000000000000001 /* Frameworks */,
+				D80000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D61000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = GeomagMacTests;
+			productName = GeomagMacTests;
+			productReference = D20000000000000000000002 /* GeomagMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A60000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					D50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A50000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = A90000000000000000000001 /* Build configuration list for PBXProject "GeomagMac" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* GeomagMac */,
+				D50000000000000000000001 /* GeomagMacTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A80000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000007 /* native_route_13_2.json in Resources */,
+				A10000000000000000000008 /* native_route_13_3.json in Resources */,
+				A10000000000000000000009 /* native_route_15_2.json in Resources */,
+				A10000000000000000000015 /* native_route_15_3.json in Resources */,
+				A1000000000000000000000F /* NativeData in Resources */,
+				A10000000000000000000017 /* MagneticMaps in Resources */,
+				A10000000000000000000026 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D80000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* GeomagMacApp.swift in Sources */,
+				A10000000000000000000002 /* ContentView.swift in Sources */,
+				A10000000000000000000003 /* PositioningResult.swift in Sources */,
+				A10000000000000000000004 /* AppModel.swift in Sources */,
+				A1000000000000000000000B /* AlgorithmSettings.swift in Sources */,
+				A1000000000000000000000C /* ResultExporter.swift in Sources */,
+				A1000000000000000000000D /* DatasetImport.swift in Sources */,
+				A1000000000000000000000E /* NativePositioningEngine.swift in Sources */,
+				A10000000000000000000010 /* DeviceHeadingResolver.swift in Sources */,
+				A10000000000000000000011 /* ControlledMotionProfile.swift in Sources */,
+				A10000000000000000000012 /* ControlledMagneticFusion.swift in Sources */,
+				A10000000000000000000013 /* ControlledMagneticTemplates.swift in Sources */,
+				A10000000000000000000014 /* MagneticTemplateStore.swift in Sources */,
+				A10000000000000000000016 /* GenericMagneticMapStore.swift in Sources */,
+				A10000000000000000000018 /* PipelineState.swift in Sources */,
+				A10000000000000000000019 /* TrajectoryAnalysis.swift in Sources */,
+				A1000000000000000000001A /* Theme.swift in Sources */,
+				A1000000000000000000001B /* Components.swift in Sources */,
+				A1000000000000000000001C /* AppShellView.swift in Sources */,
+				A1000000000000000000001D /* DataStageView.swift in Sources */,
+				A1000000000000000000001E /* MapStageView.swift in Sources */,
+				A1000000000000000000001F /* RunStageView.swift in Sources */,
+				A10000000000000000000020 /* AnalysisStageView.swift in Sources */,
+				A10000000000000000000021 /* TrajectoryPlot.swift in Sources */,
+				A10000000000000000000022 /* RunsRailView.swift in Sources */,
+				A10000000000000000000023 /* InspectorView.swift in Sources */,
+				A10000000000000000000024 /* StepErrorStrip.swift in Sources */,
+				A10000000000000000000025 /* ReportExporter.swift in Sources */,
+				A10000000000000000000027 /* RunComparison.swift in Sources */,
+				A10000000000000000000028 /* ComparisonPlot.swift in Sources */,
+				A10000000000000000000029 /* ComparisonStageView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D70000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D10000000000000000000001 /* NativeEngineTests.swift in Sources */,
+				D10000000000000000000002 /* PipelineStateTests.swift in Sources */,
+				D10000000000000000000003 /* TrajectoryAnalysisTests.swift in Sources */,
+				D10000000000000000000004 /* ExportTests.swift in Sources */,
+				D10000000000000000000005 /* RunComparisonTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D61000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A50000000000000000000001 /* GeomagMac */;
+			targetProxy = D60000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AA0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GeomagMac Native";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuminglei.GeomagMacNative;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GeomagMac Native";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuminglei.GeomagMacNative;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		DA0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuminglei.GeomagMacNativeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeomagMac.app/Contents/MacOS/GeomagMac";
+			};
+			name = Debug;
+		};
+		DA0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuminglei.GeomagMacNativeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeomagMac.app/Contents/MacOS/GeomagMac";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A90000000000000000000001 /* Build configuration list for PBXProject "GeomagMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000001 /* Debug */,
+				AA0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A90000000000000000000002 /* Build configuration list for PBXNativeTarget "GeomagMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000003 /* Debug */,
+				AA0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D90000000000000000000001 /* Build configuration list for PBXNativeTarget "GeomagMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA0000000000000000000001 /* Debug */,
+				DA0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A60000000000000000000001 /* Project object */;
+}

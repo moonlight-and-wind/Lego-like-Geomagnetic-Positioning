@@ -1,0 +1,42 @@
+{
+  "algorithm_magnetic_field_file" : "Magnetometer.csv",
+  "created_at" : "2026-08-06T09:33:51.667Z",
+  "dataset_key" : "route_13_3",
+  "device_pose" : "face_up_front_forward",
+  "duration_seconds" : 30.578745007514954,
+  "format_version" : 2,
+  "platform" : "iPhone",
+  "raw_magnetic_field_file" : "MagnetometerRaw.csv",
+  "reference_frame" : "ios_device_and_core_motion_attitude",
+  "requested_sample_rate_hz" : 100,
+  "stopped_at" : "2026-08-06T09:34:22.246Z",
+  "streams" : {
+    "accelerometer" : {
+      "file" : "Accelerometer.csv",
+      "observed_rate_hz" : 100.42509426351006,
+      "samples" : 3066
+    },
+    "device_motion" : {
+      "file" : "DeviceMotion.csv",
+      "observed_rate_hz" : 100.42509534801718,
+      "samples" : 3065
+    },
+    "gyroscope" : {
+      "file" : "Gyroscope.csv",
+      "observed_rate_hz" : 100.42509646907865,
+      "samples" : 3067
+    },
+    "magnetometer" : {
+      "file" : "Magnetometer.csv",
+      "observed_rate_hz" : 100.42509534801718,
+      "samples" : 3065
+    },
+    "magnetometer_raw" : {
+      "file" : "MagnetometerRaw.csv",
+      "observed_rate_hz" : 97.58596074449191,
+      "samples" : 2980
+    }
+  },
+  "system_version" : "Version 26.5.2 (Build 23F84)",
+  "timestamp_mode" : "seconds_since_capture_start"
+}
