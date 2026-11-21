@@ -32,36 +32,10 @@ struct AnalysisStageView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                header
-                if model.resultSource == .history {
-                    historyBanner
-                }
-                if let result = model.result {
-                    insight(result)
-                    TrajectoryPlot(
-                        result: result,
-                        layers: plotLayers,
-                        progress: model.playbackProgress,
-                        selectedStep: model.selectedStepIndex,
-                        gridCellSize: model.mapForCurrentSelection?.document.gridCellSizeM,
-                        viewport: $viewport,
-                        onSelectStep: selectStep
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .layoutPriority(1)
-
-                    StepErrorStrip(
-                        result: result,
-                        progress: model.playbackProgress,
-                        selectedStep: model.selectedStepIndex,
-                        onSelect: { selectStep($0) }
-                    )
-
-                    playbackBar(result)
-                    metrics(result)
-                    foot(result)
+                if model.comparisonActive {
+                    ComparisonStageView()
                 } else {
-                    emptyState
+                    singleResultContent
                 }
             }
             .padding(16)
@@ -84,6 +58,11 @@ struct AnalysisStageView: View {
             isPlaying = false
             viewport.reset()
         }
+        .onChange(of: model.comparisonActive) { _, active in
+            if active {
+                isPlaying = false
+            }
+        }
         .focusable()
         .focused($isFocused)
         .onAppear { isFocused = true }
@@ -93,15 +72,19 @@ struct AnalysisStageView: View {
             }
         )
         .onKeyPress(.space) {
-            guard model.result != nil else { return .ignored }
+            guard !model.comparisonActive, model.result != nil else {
+                return .ignored
+            }
             togglePlay()
             return .handled
         }
         .onKeyPress(.leftArrow) {
+            guard !model.comparisonActive else { return .ignored }
             moveSelection(-1)
             return model.result == nil ? .ignored : .handled
         }
         .onKeyPress(.rightArrow) {
+            guard !model.comparisonActive else { return .ignored }
             moveSelection(1)
             return model.result == nil ? .ignored : .handled
         }
@@ -109,6 +92,10 @@ struct AnalysisStageView: View {
             if model.isFocusMode {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     model.isFocusMode = false
+                }
+            } else if model.comparisonActive {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    model.endComparison()
                 }
             } else {
                 model.selectedStepIndex = nil
@@ -120,6 +107,41 @@ struct AnalysisStageView: View {
                 model.isFocusMode.toggle()
             }
             return .handled
+        }
+    }
+
+    @ViewBuilder
+    private var singleResultContent: some View {
+        header
+        if model.resultSource == .history {
+            historyBanner
+        }
+        if let result = model.result {
+            insight(result)
+            TrajectoryPlot(
+                result: result,
+                layers: plotLayers,
+                progress: model.playbackProgress,
+                selectedStep: model.selectedStepIndex,
+                gridCellSize: model.mapForCurrentSelection?.document.gridCellSizeM,
+                viewport: $viewport,
+                onSelectStep: selectStep
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+
+            StepErrorStrip(
+                result: result,
+                progress: model.playbackProgress,
+                selectedStep: model.selectedStepIndex,
+                onSelect: { selectStep($0) }
+            )
+
+            playbackBar(result)
+            metrics(result)
+            foot(result)
+        } else {
+            emptyState
         }
     }
 
@@ -161,8 +183,13 @@ struct AnalysisStageView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    InspectorView()
-                        .padding(14)
+                    if model.comparisonActive {
+                        ComparisonInspectorView()
+                            .padding(14)
+                    } else {
+                        InspectorView()
+                            .padding(14)
+                    }
                 }
                 .onAppear {
                     DispatchQueue.main.async {

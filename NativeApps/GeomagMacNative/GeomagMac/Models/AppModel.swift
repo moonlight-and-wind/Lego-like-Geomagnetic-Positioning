@@ -93,6 +93,14 @@ final class AppModel: ObservableObject {
     @Published var exportMessage: String?
     @Published private(set) var recentRuns: [RunRecord] = []
     @Published private(set) var runSummaries: [String: RunSummary] = [:]
+    @Published private(set) var comparisonSelection: [RunRecord] = []
+    @Published private(set) var comparisonRuns: [ComparisonRun] = []
+    @Published private(set) var comparisonIsLoading = false
+    @Published private(set) var comparisonLoadFailures: [String] = []
+    @Published private(set) var comparisonSelecting = false
+    @Published private(set) var comparisonActive = false
+    @Published private(set) var comparisonBaselineID: String?
+    @Published private(set) var comparisonNotice: String?
     @Published private(set) var selectedAlgorithmPreset: AlgorithmPreset
     @Published private(set) var algorithmSettings: AlgorithmSettings
     @Published var selectedMagneticMapID = ""
@@ -104,6 +112,8 @@ final class AppModel: ObservableObject {
     private var nativeTask: Task<Void, Never>?
     private var nativeEngineTask: Task<PositioningResult, Error>?
     private var runSummaryTask: Task<Void, Never>?
+    private var comparisonTask: Task<Void, Never>?
+    private var comparisonColorSlots: [String: Int] = [:]
 
     private struct RunRequest {
         let datasetKey: String
@@ -445,9 +455,6 @@ final class AppModel: ObservableObject {
            ) {
             try? data.write(to: URL(fileURLWithPath: pdfPath))
         }
-        if ProcessInfo.processInfo.environment["GEOMAG_FOCUS"] == "1" {
-            isFocusMode = true
-        }
         if ProcessInfo.processInfo.environment["GEOMAG_HISTORY"] == "1",
            let run = recentRuns.first {
             loadRun(run)
@@ -471,8 +478,106 @@ final class AppModel: ObservableObject {
                 pointCount: result.pfTrack.count
             )
         }
+        if let compareMode = ProcessInfo.processInfo.environment["GEOMAG_COMPARE"] {
+            prepareDebugComparison(compareMode)
+        }
+        if ProcessInfo.processInfo.environment["GEOMAG_FOCUS"] == "1" {
+            isFocusMode = true
+        }
         #endif
     }
+
+    #if DEBUG
+    private func prepareDebugComparison(_ mode: String) {
+        let normalized = mode.lowercased()
+        let ids: [String]
+        switch normalized {
+        case "4":
+            ids = Self.samples.map(\.id)
+        case "mixed":
+            ids = ["native_route_13_2", "native_route_15_2"]
+        case "select":
+            ids = ["native_route_13_2", "native_route_13_3", "native_route_15_2"]
+        case "params":
+            ids = ["native_route_13_2"]
+        default:
+            ids = ["native_route_13_2", "native_route_13_3"]
+        }
+
+        let now = Date()
+        var records: [RunRecord] = []
+        for (index, id) in ids.enumerated() {
+            guard let url = Bundle.main.url(
+                forResource: id,
+                withExtension: "json",
+                subdirectory: "Samples"
+            ) ?? Bundle.main.url(forResource: id, withExtension: "json") else {
+                continue
+            }
+            records.append(
+                RunRecord(
+                    jsonURL: url,
+                    modifiedAt: now.addingTimeInterval(-Double(index + 1) * 3_600)
+                )
+            )
+        }
+        if normalized == "params",
+           let baselineRecord = records.first,
+           let variant = debugParameterVariant(from: baselineRecord, date: now.addingTimeInterval(-7_200)) {
+            records.append(variant)
+        }
+
+        comparisonSelection = records
+        comparisonColorSlots = [:]
+        comparisonBaselineID = records.first?.id
+        for (index, record) in records.enumerated() {
+            comparisonColorSlots[record.id] = index
+            if let data = try? Data(contentsOf: record.jsonURL),
+               let summary = RunSummary.decode(data) {
+                runSummaries[record.jsonURL.path] = summary
+            }
+        }
+        if !records.isEmpty {
+            recentRuns.insert(contentsOf: records, at: 0)
+        }
+
+        runsRailVisible = true
+        comparisonSelecting = true
+        stage = .analysis
+        if normalized == "select" {
+            comparisonNotice = nil
+        } else {
+            startComparison()
+        }
+    }
+
+    private func debugParameterVariant(
+        from record: RunRecord,
+        date: Date
+    ) -> RunRecord? {
+        guard var object = try? JSONSerialization.jsonObject(
+            with: Data(contentsOf: record.jsonURL)
+        ) as? [String: Any] else { return nil }
+        object["dataset_key"] = "route_13_2_param"
+        object["pf_smoothing_mode"] = "none"
+        object["pf_smoothing_alpha"] = 0
+        object["step_length_scale"] = 0.95
+        object["heading_snap_deg"] = 15
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else {
+            return nil
+        }
+        let directory = URL(fileURLWithPath: "/tmp/geomagmac-compare", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let url = directory.appendingPathComponent("route_13_2-param-variant.json")
+        guard (try? data.write(to: url, options: .atomic)) != nil else {
+            return nil
+        }
+        return RunRecord(jsonURL: url, modifiedAt: date)
+    }
+    #endif
 
     func loadBundledSample(id: String, presentResult: Bool = true) {
         selectedSampleID = id
@@ -872,6 +977,210 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var canStartComparison: Bool {
+        comparisonSelection.count >= 2
+    }
+
+    var comparisonTitle: String {
+        RunComparison.title(for: comparisonRuns.map(\.result))
+    }
+
+    var comparisonParameterRows: [ComparisonParameter] {
+        RunComparison.parameterRows(for: comparisonRuns.map(\.result))
+    }
+
+    var comparisonParameterDifferenceCount: Int {
+        comparisonParameterRows.filter(\.isDifferent).count
+    }
+
+    var comparisonRoutesMatch: Bool {
+        RunComparison.routesMatch(comparisonRuns.map(\.result))
+    }
+
+    var comparisonBaseline: ComparisonRun? {
+        comparisonRuns.first { $0.id == comparisonBaselineID }
+    }
+
+    var comparisonBaselineLetter: String {
+        comparisonBaseline?.letter ?? "—"
+    }
+
+    func isComparisonSelected(_ record: RunRecord) -> Bool {
+        comparisonSelection.contains { $0.id == record.id }
+    }
+
+    func comparisonColorIndex(for record: RunRecord) -> Int? {
+        comparisonColorSlots[record.id]
+    }
+
+    func toggleComparisonSelectionMode() {
+        if comparisonActive {
+            endComparison()
+            return
+        }
+        comparisonSelecting.toggle()
+        comparisonNotice = nil
+    }
+
+    func toggleComparisonSelection(_ record: RunRecord) {
+        if let index = comparisonSelection.firstIndex(where: { $0.id == record.id }) {
+            comparisonSelection.remove(at: index)
+            comparisonColorSlots[record.id] = nil
+            comparisonNotice = nil
+        } else {
+            guard comparisonSelection.count < RunComparison.maximumRunCount else {
+                comparisonNotice = "最多同时对比 \(RunComparison.maximumRunCount) 条运行；先取消一条再添加。"
+                return
+            }
+            comparisonSelection.append(record)
+            comparisonColorSlots[record.id] = nextComparisonColorSlot()
+            comparisonNotice = nil
+        }
+
+        ensureComparisonBaseline(preferLoaded: false)
+        guard comparisonActive else { return }
+        if comparisonSelection.isEmpty {
+            comparisonTask?.cancel()
+            comparisonTask = nil
+            comparisonRuns = []
+            comparisonLoadFailures = []
+            comparisonIsLoading = false
+            comparisonActive = false
+        } else {
+            reloadComparison()
+        }
+    }
+
+    func clearComparisonSelection() {
+        comparisonTask?.cancel()
+        comparisonTask = nil
+        comparisonSelection = []
+        comparisonColorSlots = [:]
+        comparisonRuns = []
+        comparisonLoadFailures = []
+        comparisonIsLoading = false
+        comparisonActive = false
+        comparisonBaselineID = nil
+        comparisonNotice = nil
+    }
+
+    func startComparison() {
+        guard comparisonSelection.count >= 2 else {
+            comparisonSelecting = true
+            comparisonNotice = "至少选择 2 条运行才能开始对比。"
+            return
+        }
+        comparisonNotice = nil
+        comparisonSelecting = true
+        comparisonActive = true
+        stage = .analysis
+        selectedStepIndex = nil
+        isFocusMode = false
+        inspectorScrollTarget = nil
+        ensureComparisonBaseline(preferLoaded: true)
+        reloadComparison()
+    }
+
+    func endComparison() {
+        comparisonTask?.cancel()
+        comparisonTask = nil
+        comparisonRuns = []
+        comparisonLoadFailures = []
+        comparisonIsLoading = false
+        comparisonActive = false
+        comparisonSelecting = false
+        comparisonNotice = nil
+    }
+
+    func retryComparisonLoad() {
+        guard comparisonActive else { return }
+        reloadComparison()
+    }
+
+    func setComparisonBaseline(id: String) {
+        guard comparisonRuns.contains(where: { $0.id == id }) else { return }
+        comparisonBaselineID = id
+    }
+
+    private func nextComparisonColorSlot() -> Int {
+        let used = Set(comparisonColorSlots.values)
+        return (0..<RunComparison.maximumRunCount).first { !used.contains($0) }
+            ?? comparisonSelection.count
+    }
+
+    private func ensureComparisonBaseline(preferLoaded: Bool) {
+        let ids = Set(comparisonSelection.map(\.id))
+        if let baseline = comparisonBaselineID, ids.contains(baseline) {
+            return
+        }
+        if preferLoaded,
+           let loaded = comparisonSelection.first(where: {
+               $0.jsonURL.lastPathComponent == loadedFileName
+           }) {
+            comparisonBaselineID = loaded.id
+            return
+        }
+        comparisonBaselineID = comparisonSelection.first?.id
+    }
+
+    private func reloadComparison() {
+        comparisonTask?.cancel()
+        comparisonTask = nil
+        let selection = comparisonSelection
+        guard !selection.isEmpty else {
+            comparisonRuns = []
+            comparisonLoadFailures = []
+            comparisonIsLoading = false
+            return
+        }
+        let slots = comparisonColorSlots
+        comparisonIsLoading = true
+        comparisonLoadFailures = []
+
+        comparisonTask = Task { [weak self] in
+            var loaded: [ComparisonRun] = []
+            var failures: [String] = []
+            for record in selection {
+                if Task.isCancelled { return }
+                let decoded: PositioningResult? = await Task.detached(
+                    priority: .userInitiated
+                ) { () -> PositioningResult? in
+                    guard let data = try? Data(contentsOf: record.jsonURL) else {
+                        return nil
+                    }
+                    return try? JSONDecoder().decode(
+                        PositioningResult.self,
+                        from: data
+                    )
+                }.value
+                if Task.isCancelled { return }
+                if let decoded {
+                    loaded.append(
+                        ComparisonRun(
+                            record: record,
+                            result: decoded,
+                            colorIndex: slots[record.id] ?? 0
+                        )
+                    )
+                } else {
+                    failures.append(record.displayName)
+                }
+                guard let self else { return }
+                self.comparisonRuns = loaded
+                self.comparisonLoadFailures = failures
+            }
+            guard let self else { return }
+            self.comparisonIsLoading = false
+            if !self.comparisonRuns.isEmpty,
+               !self.comparisonRuns.contains(where: {
+                   $0.id == self.comparisonBaselineID
+               }) {
+                self.comparisonBaselineID = self.comparisonRuns.first?.id
+            }
+            self.ensureComparisonBaseline(preferLoaded: false)
+        }
+    }
+
     func loadRun(_ record: RunRecord) {
         guard load(url: record.jsonURL) else { return }
         resultSource = .history
@@ -954,6 +1263,7 @@ final class AppModel: ObservableObject {
     }
 
     func exportReportPDF() {
+        guard !comparisonActive else { return }
         guard let result else {
             errorMessage = "当前没有可以导出的定位结果。"
             return
@@ -1038,6 +1348,9 @@ final class AppModel: ObservableObject {
         do {
             let data = try Data(contentsOf: url)
             let decoded = try JSONDecoder().decode(PositioningResult.self, from: data)
+            if comparisonActive || comparisonSelecting {
+                endComparison()
+            }
             result = decoded
             loadedFileName = url.lastPathComponent
             playbackProgress = 1.0

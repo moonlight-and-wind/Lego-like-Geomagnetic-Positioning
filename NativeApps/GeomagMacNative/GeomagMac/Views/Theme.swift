@@ -99,6 +99,18 @@ struct Theme {
     static func resolve(_ scheme: ColorScheme) -> Theme {
         scheme == .dark ? .dark : .light
     }
+
+    private static let comparisonPalette: [Color] = [
+        Color(red: 0.3608, green: 0.9490, blue: 0.7804),
+        Color(red: 0.3020, green: 0.6078, blue: 1.0),
+        Color(red: 1.0, green: 0.7059, blue: 0.3294),
+        Color(red: 0.8275, green: 0.5569, blue: 1.0),
+    ]
+
+    func comparisonColor(_ index: Int) -> Color {
+        guard !Self.comparisonPalette.isEmpty else { return signal }
+        return Self.comparisonPalette[index % Self.comparisonPalette.count]
+    }
 }
 
 enum ThemeFont {

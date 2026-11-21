@@ -740,7 +740,7 @@ struct TrajectoryPlot: View {
     }
 }
 
-private struct ScrollWheelMonitor: NSViewRepresentable {
+struct ScrollWheelMonitor: NSViewRepresentable {
     let onScroll: (CGFloat, CGPoint) -> Void
 
     func makeNSView(context: Context) -> NSView {

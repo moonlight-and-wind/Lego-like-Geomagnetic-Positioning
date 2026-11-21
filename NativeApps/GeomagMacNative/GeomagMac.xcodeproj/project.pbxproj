@@ -30,6 +30,9 @@
 		A10000000000000000000023 /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* InspectorView.swift */; };
 		A10000000000000000000024 /* StepErrorStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* StepErrorStrip.swift */; };
 		A10000000000000000000025 /* ReportExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* ReportExporter.swift */; };
+		A10000000000000000000027 /* RunComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* RunComparison.swift */; };
+		A10000000000000000000028 /* ComparisonPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* ComparisonPlot.swift */; };
+		A10000000000000000000029 /* ComparisonStageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* ComparisonStageView.swift */; };
 		A10000000000000000000017 /* MagneticMaps in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* MagneticMaps */; };
 		A10000000000000000000026 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* Assets.xcassets */; };
 		A1000000000000000000000B /* AlgorithmSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* AlgorithmSettings.swift */; };
@@ -46,6 +49,7 @@
 		D10000000000000000000002 /* PipelineStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PipelineStateTests.swift */; };
 		D10000000000000000000003 /* TrajectoryAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* TrajectoryAnalysisTests.swift */; };
 		D10000000000000000000004 /* ExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* ExportTests.swift */; };
+		D10000000000000000000005 /* RunComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* RunComparisonTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -84,6 +88,9 @@
 		A20000000000000000000024 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		A20000000000000000000025 /* StepErrorStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepErrorStrip.swift; sourceTree = "<group>"; };
 		A20000000000000000000026 /* ReportExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportExporter.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* RunComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunComparison.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* ComparisonPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonPlot.swift; sourceTree = "<group>"; };
+		A2000000000000000000002A /* ComparisonStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonStageView.swift; sourceTree = "<group>"; };
 		A2000000000000000000000F /* NativePositioningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePositioningEngine.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* NativeData */ = {isa = PBXFileReference; explicitFileType = folder; path = NativeData; sourceTree = "<group>"; };
 		A20000000000000000000011 /* DeviceHeadingResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceHeadingResolver.swift; sourceTree = "<group>"; };
@@ -99,6 +106,7 @@
 		D20000000000000000000003 /* PipelineStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineStateTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000004 /* TrajectoryAnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrajectoryAnalysisTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* ExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000006 /* RunComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunComparisonTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000002 /* GeomagMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeomagMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -153,6 +161,7 @@
 				A20000000000000000000019 /* PipelineState.swift */,
 				A2000000000000000000001A /* TrajectoryAnalysis.swift */,
 				A20000000000000000000026 /* ReportExporter.swift */,
+				A20000000000000000000028 /* RunComparison.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -171,6 +180,8 @@
 				A20000000000000000000023 /* RunsRailView.swift */,
 				A20000000000000000000024 /* InspectorView.swift */,
 				A20000000000000000000025 /* StepErrorStrip.swift */,
+				A20000000000000000000029 /* ComparisonPlot.swift */,
+				A2000000000000000000002A /* ComparisonStageView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -227,6 +238,7 @@
 				D20000000000000000000003 /* PipelineStateTests.swift */,
 				D20000000000000000000004 /* TrajectoryAnalysisTests.swift */,
 				D20000000000000000000005 /* ExportTests.swift */,
+				D20000000000000000000006 /* RunComparisonTests.swift */,
 			);
 			path = GeomagMacTests;
 			sourceTree = "<group>";
@@ -364,6 +376,9 @@
 				A10000000000000000000023 /* InspectorView.swift in Sources */,
 				A10000000000000000000024 /* StepErrorStrip.swift in Sources */,
 				A10000000000000000000025 /* ReportExporter.swift in Sources */,
+				A10000000000000000000027 /* RunComparison.swift in Sources */,
+				A10000000000000000000028 /* ComparisonPlot.swift in Sources */,
+				A10000000000000000000029 /* ComparisonStageView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -375,6 +390,7 @@
 				D10000000000000000000002 /* PipelineStateTests.swift in Sources */,
 				D10000000000000000000003 /* TrajectoryAnalysisTests.swift in Sources */,
 				D10000000000000000000004 /* ExportTests.swift in Sources */,
+				D10000000000000000000005 /* RunComparisonTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

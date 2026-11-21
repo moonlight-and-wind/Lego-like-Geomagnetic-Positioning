@@ -393,6 +393,9 @@ private struct AppTopBar: View {
             }
             return model.pipelineReadiness.canRun ? "就绪" : "等待前置"
         case .analysis:
+            if model.comparisonActive {
+                return "\(model.comparisonRuns.count) 次运行 · 基准 \(model.comparisonBaselineLetter)"
+            }
             if let final = model.result?.pfErrorStats?.final {
                 return "终点 \(String(format: "%.2f", final)) m"
             }
@@ -450,7 +453,19 @@ private struct AppTopBar: View {
                 }
             }
         case .analysis:
-            ExportMenu()
+            if model.comparisonActive {
+                PlateButton(
+                    title: "退出对比",
+                    systemImage: "xmark",
+                    kind: .secondary
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        model.endComparison()
+                    }
+                }
+            } else {
+                ExportMenu()
+            }
         }
     }
 }

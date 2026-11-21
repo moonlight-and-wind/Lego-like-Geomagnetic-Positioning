@@ -35,6 +35,7 @@ struct GeomagMacApp: App {
                     .keyboardShortcut("r", modifiers: .command)
                 Button("导出报告 PDF…") { model.exportReportPDF() }
                     .keyboardShortcut("e", modifiers: .command)
+                    .disabled(model.comparisonActive)
                 Button("切换检查器") {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         model.inspectorVisible.toggle()
